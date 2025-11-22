@@ -5,6 +5,7 @@ YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 
 **Version**: 2.4.10-SNAPSHOT
 **Group ID**: org.codelibs
+**Java**: 11+
 
 The YUI Compressor is a JavaScript compressor which, in addition to removing
 comments and white-spaces, obfuscates local variables using the smallest
@@ -18,7 +19,7 @@ on which compressor is being used is made on the file extension (js or css)
 Building
 --------
 
-This project uses Maven for build management (requires Maven 3.8+):
+This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
 
     mvn clean package
 
@@ -160,7 +161,7 @@ Notes
 
 * Supports wildcards for specifying multiple input files.
 
-* The YUI Compressor requires Java version >= 1.5.
+* The YUI Compressor requires Java version >= 11.
 
 * It is possible to prevent a local variable, nested function or function
 argument from being obfuscated by using "hints". A hint is a string that
