@@ -40,7 +40,7 @@ public class JavaScriptCompressorTest {
 
         JavaScriptCompressor compressor = new JavaScriptCompressor(
             new StringReader(input), null);
-        compressor.compress(output, -1, false, false, false, false);
+        compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
         assertFalse("Variable should be obfuscated", result.contains("longVariableName"));
@@ -53,7 +53,7 @@ public class JavaScriptCompressorTest {
 
         JavaScriptCompressor compressor = new JavaScriptCompressor(
             new StringReader(input), null);
-        compressor.compress(output, -1, true, false, false, false);
+        compressor.compress(output, -1, false, false, false, false);
 
         String result = output.toString();
         assertTrue("Variable should not be obfuscated with nomunge", result.contains("myVar"));
