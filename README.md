@@ -1,6 +1,11 @@
 YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 =========================================================
 
+![Java CI](https://github.com/codelibs/yuicompressor/workflows/Java%20CI%20with%20Maven/badge.svg)
+
+**Version**: 2.4.10-SNAPSHOT
+**Group ID**: org.codelibs
+
 The YUI Compressor is a JavaScript compressor which, in addition to removing
 comments and white-spaces, obfuscates local variables using the smallest
 possible variable name. This obfuscation is safe, even when using constructs
@@ -19,11 +24,11 @@ This project uses Maven for build management (requires Maven 3.8+):
 
     mvn clean package
 
-The compiled JAR will be available at `target/yuicompressor-2.4.9.jar`
+The compiled JAR will be available at `target/yuicompressor-2.4.10-SNAPSHOT.jar`
 
 To run the JAR:
 
-    java -jar target/yuicompressor-2.4.9.jar [options] [input file]
+    java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
 
 To install to local Maven repository:
 
@@ -37,6 +42,28 @@ The legacy Ant build is still available:
 
 Testing
 -------
+
+### Java Tests
+
+Run the comprehensive JUnit test suite:
+
+    mvn test
+
+The test suite includes:
+- JavaScript compression tests (variable obfuscation, minification, etc.)
+- CSS compression tests (color optimization, whitespace removal, etc.)
+- Command-line interface tests
+
+### Node.js Tests
+
+Run the Node.js integration tests:
+
+    npm install
+    npm test
+
+### Legacy Tests
+
+The legacy shell script tests are also available:
 
     ./tests/suite.sh
 

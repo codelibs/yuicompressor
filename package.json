@@ -1,7 +1,7 @@
 {
     "name": "yuicompressor",
     "description": "YUICompressor CLI and Node.js require",
-    "version": "2.4.9",
+    "version": "2.4.10-SNAPSHOT",
     "author": "Julien Lecomte <julien.lecomte@gmail.com>",
     "contributors": [ 
         {
@@ -34,6 +34,7 @@
     },
     "files": [
         "build/*.jar",
+        "target/*.jar",
         "nodejs"
     ],
     "scripts": {
@@ -47,6 +48,9 @@
     ],
     "repository": {
         "type":"git",
-        "url":"https://github.com/yui/yuicompressor"
+        "url":"https://github.com/codelibs/yuicompressor"
+    },
+    "engines": {
+        "node": ">=8.0.0"
     }
 }
