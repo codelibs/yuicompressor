@@ -3,15 +3,30 @@ var spawn = require('child_process').spawn,
     fs = require('fs'),
     path = require('path'),
     jar,
-    exists = fs.exists || path.exists,
-    lists = fs.readdirSync(path.join(__dirname, '../build'));
+    exists = fs.exists || path.exists;
 
-lists.some(function(item) {
-    if (path.extname(item) === '.jar') {
-        jar = path.join(__dirname, '../build/', item);
-        return true;
+// Find JAR in Maven target directory
+var searchPaths = [
+    path.join(__dirname, '../target')
+];
+
+for (var i = 0; i < searchPaths.length; i++) {
+    var searchPath = searchPaths[i];
+    if (fs.existsSync(searchPath)) {
+        var lists = fs.readdirSync(searchPath);
+        var found = lists.some(function(item) {
+            if (path.extname(item) === '.jar' && item.indexOf('yuicompressor') !== -1) {
+                jar = path.join(searchPath, item);
+                return true;
+            }
+        });
+        if (found) break;
     }
-});
+}
+
+if (!jar) {
+    throw new Error('YUI Compressor JAR file not found. Please build the project first using "mvn package".');
+}
 
 exports.jar = jar;
 

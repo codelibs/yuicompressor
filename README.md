@@ -1,6 +1,12 @@
 YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 =========================================================
 
+![Java CI](https://github.com/codelibs/yuicompressor/workflows/Java%20CI%20with%20Maven/badge.svg)
+
+**Version**: 2.4.10-SNAPSHOT
+**Group ID**: org.codelibs
+**Java**: 11+
+
 The YUI Compressor is a JavaScript compressor which, in addition to removing
 comments and white-spaces, obfuscates local variables using the smallest
 possible variable name. This obfuscation is safe, even when using constructs
@@ -13,12 +19,40 @@ on which compressor is being used is made on the file extension (js or css)
 Building
 --------
 
-    ant
+This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
+
+    mvn clean package
+
+The compiled JAR will be available at `target/yuicompressor-2.4.10-SNAPSHOT.jar`
+
+To run the JAR:
+
+    java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
+
+To install to local Maven repository:
+
+    mvn clean install
 
 Testing
 -------
 
-    ./tests/suite.sh
+### Java Tests
+
+Run the comprehensive JUnit test suite:
+
+    mvn test
+
+The test suite includes:
+- JavaScript compression tests (variable obfuscation, minification, etc.)
+- CSS compression tests (color optimization, whitespace removal, etc.)
+- Command-line interface tests
+
+### Node.js Tests
+
+Run the Node.js integration tests:
+
+    npm install
+    npm test
 
 
 Node.js Package
@@ -127,7 +161,7 @@ Notes
 
 * Supports wildcards for specifying multiple input files.
 
-* The YUI Compressor requires Java version >= 1.5.
+* The YUI Compressor requires Java version >= 11.
 
 * It is possible to prevent a local variable, nested function or function
 argument from being obfuscated by using "hints". A hint is a string that

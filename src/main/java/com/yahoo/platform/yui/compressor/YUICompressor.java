@@ -8,165 +8,185 @@
  */
 package com.yahoo.platform.yui.compressor;
 
-import jargs.gnu.CmdLineParser;
+import org.kohsuke.args4j.Argument;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.Option;
 import org.mozilla.javascript.ErrorReporter;
 import org.mozilla.javascript.EvaluatorException;
 
 import java.io.*;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
 
 public class YUICompressor {
 
-    public static void main(String args[]) {
+    @Option(name = "-V", aliases = {"--version"}, usage = "Print version information")
+    private boolean showVersion = false;
 
-        CmdLineParser parser = new CmdLineParser();
-        CmdLineParser.Option typeOpt = parser.addStringOption("type");
-        CmdLineParser.Option versionOpt = parser.addBooleanOption('V', "version");
-        CmdLineParser.Option verboseOpt = parser.addBooleanOption('v', "verbose");
-        CmdLineParser.Option nomungeOpt = parser.addBooleanOption("nomunge");
-        CmdLineParser.Option linebreakOpt = parser.addStringOption("line-break");
-        CmdLineParser.Option preserveSemiOpt = parser.addBooleanOption("preserve-semi");
-        CmdLineParser.Option disableOptimizationsOpt = parser.addBooleanOption("disable-optimizations");
-        CmdLineParser.Option helpOpt = parser.addBooleanOption('h', "help");
-        CmdLineParser.Option charsetOpt = parser.addStringOption("charset");
-        CmdLineParser.Option outputFilenameOpt = parser.addStringOption('o', "output");
-        CmdLineParser.Option mungemapFilenameOpt = parser.addStringOption('m', "mungemap");
-        CmdLineParser.Option preserveUnknownHintsOpt = parser.addBooleanOption('p', "preservehints");
+    @Option(name = "-h", aliases = {"--help"}, usage = "Displays this information")
+    private boolean showHelp = false;
+
+    @Option(name = "--type", usage = "Specifies the type of the input file (js or css)")
+    private String type = null;
+
+    @Option(name = "--charset", usage = "Read the input file using specified charset")
+    private String charset = null;
+
+    @Option(name = "--line-break", metaVar = "COLUMN", usage = "Insert a line break after the specified column number")
+    private String lineBreak = null;
+
+    @Option(name = "-v", aliases = {"--verbose"}, usage = "Display informational messages and warnings")
+    private boolean verbose = false;
+
+    @Option(name = "-p", aliases = {"--preservehints"}, usage = "Don't elide unrecognized compiler hints")
+    private boolean preserveHints = false;
+
+    @Option(name = "-m", metaVar = "FILE", usage = "Place a mapping of munged identifiers to originals in this file")
+    private String mungemapFile = null;
+
+    @Option(name = "-o", metaVar = "FILE", usage = "Place the output into specified file")
+    private String outputFile = null;
+
+    @Option(name = "--nomunge", usage = "Minify only, do not obfuscate")
+    private boolean nomunge = false;
+
+    @Option(name = "--preserve-semi", usage = "Preserve all semicolons")
+    private boolean preserveSemi = false;
+
+    @Option(name = "--disable-optimizations", usage = "Disable all micro optimizations")
+    private boolean disableOptimizations = false;
+
+    @Argument(metaVar = "INPUT_FILES", usage = "Input files to compress")
+    private List<String> inputFiles = new ArrayList<>();
+
+    public static void main(String[] args) {
+        YUICompressor compressor = new YUICompressor();
+        CmdLineParser parser = new CmdLineParser(compressor);
+
+        try {
+            parser.parseArgument(args);
+            compressor.run();
+        } catch (CmdLineException e) {
+            System.err.println(e.getMessage());
+            compressor.usage(parser);
+            System.exit(1);
+        }
+    }
+
+    private void run() {
+        if (showHelp) {
+            usage(null);
+            System.exit(0);
+        }
+
+        if (showVersion) {
+            version();
+            System.exit(0);
+        }
 
         Reader in = null;
         Writer out = null;
         Writer mungemap = null;
 
         try {
-
-            parser.parse(args);
-
-            Boolean help = (Boolean) parser.getOptionValue(helpOpt);
-            if (help != null && help.booleanValue()) {
-                usage();
-                System.exit(0);
-            }
-
-            Boolean version = (Boolean) parser.getOptionValue(versionOpt);
-            if (version != null && version.booleanValue()) {
-                version();
-                System.exit(0);
-            }
-
-            boolean verbose = parser.getOptionValue(verboseOpt) != null;
-
-            String charset = (String) parser.getOptionValue(charsetOpt);
+            // Validate and set default charset
             if (charset == null || !Charset.isSupported(charset)) {
-                // charset = System.getProperty("file.encoding");
-                // if (charset == null) {
-                //     charset = "UTF-8";
-                // }
-
-                // UTF-8 seems to be a better choice than what the system is reporting
                 charset = "UTF-8";
-
-
                 if (verbose) {
                     System.err.println("\n[INFO] Using charset " + charset);
                 }
             }
 
+            // Parse line break position
             int linebreakpos = -1;
-            String linebreakstr = (String) parser.getOptionValue(linebreakOpt);
-            if (linebreakstr != null) {
+            if (lineBreak != null) {
                 try {
-                    linebreakpos = Integer.parseInt(linebreakstr, 10);
+                    linebreakpos = Integer.parseInt(lineBreak, 10);
                 } catch (NumberFormatException e) {
-                    usage();
+                    usage(null);
                     System.exit(1);
                 }
             }
 
-            String typeOverride = (String) parser.getOptionValue(typeOpt);
-            if (typeOverride != null && !typeOverride.equalsIgnoreCase("js") && !typeOverride.equalsIgnoreCase("css")) {
-                usage();
+            // Validate type if specified
+            if (type != null && !type.equalsIgnoreCase("js") && !type.equalsIgnoreCase("css")) {
+                usage(null);
                 System.exit(1);
             }
 
-            boolean munge = parser.getOptionValue(nomungeOpt) == null;
-            boolean preserveAllSemiColons = parser.getOptionValue(preserveSemiOpt) != null;
-            boolean disableOptimizations = parser.getOptionValue(disableOptimizationsOpt) != null;
-            boolean preserveUnknownHints = parser.getOptionValue(preserveUnknownHintsOpt) != null;
+            // Determine munge setting (nomunge inverts the logic)
+            boolean munge = !nomunge;
 
-            String[] fileArgs = parser.getRemainingArgs();
-            java.util.List files = java.util.Arrays.asList(fileArgs);
+            // Handle empty input files (use stdin)
+            List<String> files = inputFiles;
             if (files.isEmpty()) {
-                if (typeOverride == null) {
-                    usage();
+                if (type == null) {
+                    usage(null);
                     System.exit(1);
                 }
-                files = new java.util.ArrayList();
+                files = new ArrayList<>();
                 files.add("-"); // read from stdin
             }
 
-            String output = (String) parser.getOptionValue(outputFilenameOpt);
-            String pattern[];
-            if(output == null) {
+            // Parse output pattern
+            String[] pattern;
+            if (outputFile == null) {
                 pattern = new String[0];
-            } else if (output.matches("(?i)^[a-z]\\:\\\\.*")){ // if output is with something like c:\ dont split it
-                pattern = new String[]{output};
+            } else if (outputFile.matches("(?i)^[a-z]\\:\\\\.*")) {
+                // Windows path (e.g., C:\path)
+                pattern = new String[]{outputFile};
             } else {
-                pattern = output.split(":");
+                pattern = outputFile.split(":");
             }
-            
+
+            // Open mungemap file if specified
             try {
-                String mungemapFilename = (String) parser.getOptionValue(mungemapFilenameOpt);
-                if (mungemapFilename != null) {
-                    mungemap = new OutputStreamWriter(new FileOutputStream(mungemapFilename), charset);
+                if (mungemapFile != null) {
+                    mungemap = new OutputStreamWriter(new FileOutputStream(mungemapFile), charset);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
                 System.exit(1);
             }
 
-            java.util.Iterator filenames = files.iterator();
-            while(filenames.hasNext()) {
-                String inputFilename = (String)filenames.next();
-                String type = null;
+            // Process each input file
+            for (String inputFilename : files) {
+                String fileType = null;
                 try {
                     if (inputFilename.equals("-")) {
-
                         in = new InputStreamReader(System.in, charset);
-                        type = typeOverride;
-
+                        fileType = type;
                     } else {
-
-                        if ( typeOverride != null ) {
-                            type = typeOverride;
-                        }
-                        else {
+                        if (type != null) {
+                            fileType = type;
+                        } else {
                             int idx = inputFilename.lastIndexOf('.');
                             if (idx >= 0 && idx < inputFilename.length() - 1) {
-                                type = inputFilename.substring(idx + 1);
+                                fileType = inputFilename.substring(idx + 1);
                             }
                         }
 
-                        if (type == null || !type.equalsIgnoreCase("js") && !type.equalsIgnoreCase("css")) {
-                            usage();
+                        if (fileType == null || !fileType.equalsIgnoreCase("js") && !fileType.equalsIgnoreCase("css")) {
+                            usage(null);
                             System.exit(1);
                         }
 
                         in = new InputStreamReader(new FileInputStream(inputFilename), charset);
                     }
 
-                    String outputFilename = output;
-                    // if a substitution pattern was passed in
+                    String outputFilename = outputFile;
+                    // Apply substitution pattern if provided
                     if (pattern.length > 1 && files.size() > 0) {
                         outputFilename = inputFilename.replaceFirst(pattern[0], pattern[1]);
                     }
 
-                    if (type.equalsIgnoreCase("js")) {
-
+                    if (fileType.equalsIgnoreCase("js")) {
                         try {
                             final String localFilename = inputFilename;
 
                             JavaScriptCompressor compressor = new JavaScriptCompressor(in, new ErrorReporter() {
-
                                 public void warning(String message, String sourceName,
                                         int line, String lineSource, int lineOffset) {
                                     System.err.println("\n[WARNING] in " + localFilename);
@@ -194,37 +214,34 @@ public class YUICompressor {
                                 }
                             });
 
-                            // Close the input stream first, and then open the output stream,
-                            // in case the output file should override the input file.
-                            in.close(); in = null;
+                            // Close input stream before opening output stream
+                            in.close();
+                            in = null;
 
                             if (outputFilename == null) {
                                 out = new OutputStreamWriter(System.out, charset);
                             } else {
                                 out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
                                 if (mungemap != null) {
-                                    mungemap.write("\n\nFile: "+outputFilename+"\n\n");
+                                    mungemap.write("\n\nFile: " + outputFilename + "\n\n");
                                 }
                             }
 
                             compressor.compress(out, mungemap, linebreakpos, munge, verbose,
-                                    preserveAllSemiColons, disableOptimizations, preserveUnknownHints);
+                                    preserveSemi, disableOptimizations, preserveHints);
 
                         } catch (EvaluatorException e) {
-
                             e.printStackTrace();
-                            // Return a special error code used specifically by the web front-end.
+                            // Return a special error code used specifically by the web front-end
                             System.exit(2);
-
                         }
 
-                    } else if (type.equalsIgnoreCase("css")) {
-
+                    } else if (fileType.equalsIgnoreCase("css")) {
                         CssCompressor compressor = new CssCompressor(in);
 
-                        // Close the input stream first, and then open the output stream,
-                        // in case the output file should override the input file.
-                        in.close(); in = null;
+                        // Close input stream before opening output stream
+                        in.close();
+                        in = null;
 
                         if (outputFilename == null) {
                             out = new OutputStreamWriter(System.out, charset);
@@ -236,12 +253,9 @@ public class YUICompressor {
                     }
 
                 } catch (IOException e) {
-
                     e.printStackTrace();
                     System.exit(1);
-
                 } finally {
-
                     if (in != null) {
                         try {
                             in.close();
@@ -259,12 +273,8 @@ public class YUICompressor {
                     }
                 }
             }
-        } catch (CmdLineParser.OptionException e) {
-
-            usage();
-            System.exit(1);
         } finally {
-            if (mungemap !=null) {
+            if (mungemap != null) {
                 try {
                     mungemap.close();
                 } catch (IOException e) {
@@ -274,10 +284,11 @@ public class YUICompressor {
         }
     }
 
-    private static void version() {
+    private void version() {
         System.err.println("@VERSION@");
     }
-    private static void usage() {
+
+    private void usage(CmdLineParser parser) {
         System.err.println(
                 "YUICompressor Version: @VERSION@\n"
 
