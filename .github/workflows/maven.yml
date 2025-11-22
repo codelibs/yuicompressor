@@ -111,27 +111,3 @@ jobs:
     - name: Run Node.js tests
       run: npm test
       continue-on-error: true
-
-  ant-build:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up JDK 8
-      uses: actions/setup-java@v4
-      with:
-        java-version: 8
-        distribution: 'temurin'
-
-    - name: Build with Ant
-      run: ant
-
-    - name: Verify Ant build
-      run: |
-        ls -la build/
-        test -f build/yuicompressor-*.jar
-
-    - name: Test Ant-built JAR
-      run: |
-        java -jar build/yuicompressor-*.jar --help

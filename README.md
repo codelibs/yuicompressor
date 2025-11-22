@@ -18,8 +18,6 @@ on which compressor is being used is made on the file extension (js or css)
 Building
 --------
 
-### Maven (Recommended)
-
 This project uses Maven for build management (requires Maven 3.8+):
 
     mvn clean package
@@ -33,12 +31,6 @@ To run the JAR:
 To install to local Maven repository:
 
     mvn clean install
-
-### Ant (Legacy)
-
-The legacy Ant build is still available:
-
-    ant
 
 Testing
 -------
@@ -60,12 +52,6 @@ Run the Node.js integration tests:
 
     npm install
     npm test
-
-### Legacy Tests
-
-The legacy shell script tests are also available:
-
-    ./tests/suite.sh
 
 
 Node.js Package

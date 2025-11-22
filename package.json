@@ -33,7 +33,6 @@
         "yuicompressor": "./nodejs/cli.js"
     },
     "files": [
-        "build/*.jar",
         "target/*.jar",
         "nodejs"
     ],
