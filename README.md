@@ -13,6 +13,26 @@ on which compressor is being used is made on the file extension (js or css)
 Building
 --------
 
+### Maven (Recommended)
+
+This project uses Maven for build management (requires Maven 3.8+):
+
+    mvn clean package
+
+The compiled JAR will be available at `target/yuicompressor-2.4.9.jar`
+
+To run the JAR:
+
+    java -jar target/yuicompressor-2.4.9.jar [options] [input file]
+
+To install to local Maven repository:
+
+    mvn clean install
+
+### Ant (Legacy)
+
+The legacy Ant build is still available:
+
     ant
 
 Testing

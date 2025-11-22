@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.yahoo.platform.yui</groupId>
+  <artifactId>yuicompressor</artifactId>
+  <version>2.4.9</version>
+  <packaging>jar</packaging>
+
+  <name>YUI Compressor</name>
+  <description>
+    The YUI Compressor is a JavaScript compressor which, in addition to removing
+    comments and white-spaces, obfuscates local variables using the smallest
+    possible variable name. This obfuscation is safe, even when using constructs
+    such as 'eval' or 'with' (although the compression is not optimal is those
+    cases) Compared to jsmin, the average savings is around 20%.
+  </description>
+  <url>https://github.com/yui/yuicompressor</url>
+
+  <licenses>
+    <license>
+      <name>BSD License</name>
+      <url>http://developer.yahoo.com/yui/license.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <mailingLists>
+    <mailingList>
+      <name>yui-compressor-forum</name>
+      <archive>http://yuilibrary.com/forum/viewforum.php?f=94/</archive>
+    </mailingList>
+  </mailingLists>
+
+  <scm>
+    <connection>scm:git:git://github.com/yui/yuicompressor.git</connection>
+    <url>https://github.com/yui/yuicompressor</url>
+  </scm>
+
+  <developers>
+    <developer>
+      <id>julienlecomte</id>
+      <name>Julien Lecomte</name>
+    </developer>
+    <developer>
+      <id>isaacs</id>
+      <name>Isaac Z. Schlueter</name>
+    </developer>
+  </developers>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+  </properties>
+
+  <dependencies>
+    <!-- Command line argument parser -->
+    <dependency>
+      <groupId>net.sf.jargs</groupId>
+      <artifactId>jargs</artifactId>
+      <version>1.0</version>
+    </dependency>
+
+    <!-- Mozilla Rhino JavaScript engine -->
+    <!-- Note: This project includes modified Rhino files in src/main/java/org/mozilla/javascript -->
+    <!-- Setting scope to provided since we use our own modified version -->
+    <dependency>
+      <groupId>org.mozilla</groupId>
+      <artifactId>rhino</artifactId>
+      <version>1.7R2</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Compiler plugin for Java 8 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.0</version>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+          <encoding>UTF-8</encoding>
+          <showDeprecation>false</showDeprecation>
+          <debug>true</debug>
+        </configuration>
+      </plugin>
+
+      <!-- Shade plugin to create fat JAR with dependencies -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.2.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>com.yahoo.platform.yui.compressor.Bootstrap</mainClass>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+                <!-- Exclude original Rhino classes since we have modified versions -->
+                <filter>
+                  <artifact>org.mozilla:rhino</artifact>
+                  <excludes>
+                    <exclude>org/mozilla/javascript/Parser.class</exclude>
+                    <exclude>org/mozilla/javascript/Token.class</exclude>
+                    <exclude>org/mozilla/javascript/TokenStream.class</exclude>
+                    <exclude>org/mozilla/javascript/Decompiler.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- JAR plugin configuration -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.1.0</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.yahoo.platform.yui.compressor.Bootstrap</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- Profile for Maven Central deployment -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- Source plugin for Maven Central -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.2.0</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- Javadoc plugin for Maven Central -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.2.0</version>
+            <configuration>
+              <source>8</source>
+              <doclint>none</doclint>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- GPG plugin for signing -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>1.6</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+</project>
