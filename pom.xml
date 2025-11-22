@@ -66,12 +66,12 @@
       <version>2.37</version>
     </dependency>
 
-    <!-- Mozilla Rhino JavaScript engine - upgraded to 1.8.0 -->
-    <!-- Using rhino-all for compatibility with older code that needs all modules in one JAR -->
+    <!-- Mozilla Rhino JavaScript engine - trying 1.7.14 for better compatibility -->
+    <!-- Version 1.7.14 (2022) is more compatible with our custom classes than 1.8.0 -->
     <dependency>
       <groupId>org.mozilla</groupId>
-      <artifactId>rhino-all</artifactId>
-      <version>1.8.0</version>
+      <artifactId>rhino</artifactId>
+      <version>1.7.14</version>
     </dependency>
 
     <!-- Test dependencies -->
