@@ -58,21 +58,23 @@
   </properties>
 
   <dependencies>
-    <!-- Command line argument parser -->
+    <!-- Command line argument parser - using system scope for legacy JAR -->
     <dependency>
       <groupId>net.sf.jargs</groupId>
       <artifactId>jargs</artifactId>
       <version>1.0</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/jargs-1.0.jar</systemPath>
     </dependency>
 
-    <!-- Mozilla Rhino JavaScript engine -->
+    <!-- Mozilla Rhino JavaScript engine - using system scope for legacy JAR -->
     <!-- Note: This project includes modified Rhino files in src/main/java/org/mozilla/javascript -->
-    <!-- Setting scope to provided since we use our own modified version -->
     <dependency>
       <groupId>org.mozilla</groupId>
       <artifactId>rhino</artifactId>
       <version>1.7R2</version>
-      <scope>provided</scope>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/rhino-1.7R2.jar</systemPath>
     </dependency>
 
     <!-- Test dependencies -->
@@ -151,6 +153,13 @@
                 </filter>
               </filters>
               <createDependencyReducedPom>false</createDependencyReducedPom>
+              <!-- Include system scope dependencies in the shaded JAR -->
+              <artifactSet>
+                <includes>
+                  <include>net.sf.jargs:jargs</include>
+                  <include>org.mozilla:rhino</include>
+                </includes>
+              </artifactSet>
             </configuration>
           </execution>
         </executions>
