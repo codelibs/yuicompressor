@@ -36,7 +36,7 @@
         "nodejs"
     ],
     "scripts": {
-        "test": "yuitest ./nodejs_tests/tests.js"
+        "test": "yuitest ./tests/node/tests.js"
     },
     "licenses":[
         {

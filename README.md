@@ -16,31 +16,65 @@ cases) Compared to jsmin, the average savings is around 20%.
 The YUI Compressor is also able to safely compress CSS files. The decision
 on which compressor is being used is made on the file extension (js or css)
 
-Building
---------
+## Documentation
+
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+- **[docs/BUILDING.md](docs/BUILDING.md)** - Detailed build instructions
+- **[docs/TESTING.md](docs/TESTING.md)** - Testing guide
+- **[docs/TOOLS.md](docs/TOOLS.md)** - Development tools
+- **[docs/README.md](docs/README.md)** - Documentation index
+
+## Project Structure
+
+```
+yuicompressor/
+├── src/
+│   ├── main/java/              # Java source code
+│   └── test/
+│       ├── java/               # Java test code
+│       └── resources/          # Test files (CSS/JS with .min versions)
+├── nodejs/                     # Node.js wrapper
+├── tests/
+│   └── node/                   # Node.js integration tests
+├── docs/                       # Documentation (markdown)
+├── tools/                      # Development tools
+├── pom.xml                     # Maven configuration
+└── package.json                # Node.js configuration
+```
+
+## Building
 
 This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
 
-    mvn clean package
+```bash
+mvn clean package
+```
 
 The compiled JAR will be available at `target/yuicompressor-2.4.10-SNAPSHOT.jar`
 
 To run the JAR:
 
-    java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
+```bash
+java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
+```
 
 To install to local Maven repository:
 
-    mvn clean install
+```bash
+mvn clean install
+```
 
-Testing
--------
+For detailed build instructions, see **[docs/BUILDING.md](docs/BUILDING.md)**
+
+## Testing
 
 ### Java Tests
 
 Run the comprehensive JUnit test suite:
 
-    mvn test
+```bash
+mvn test
+```
 
 The test suite includes:
 - JavaScript compression tests (variable obfuscation, minification, etc.)
@@ -51,8 +85,12 @@ The test suite includes:
 
 Run the Node.js integration tests:
 
-    npm install
-    npm test
+```bash
+npm install
+npm test
+```
+
+For more information on testing, see **[docs/TESTING.md](docs/TESTING.md)**
 
 
 Node.js Package
@@ -90,11 +128,18 @@ Options:
 * `disable-optimizations`
 
 
-TODO
-----
+## Migration from Ant to Maven
 
-* Better Docs
-* Help Pages
+This project has been migrated from Ant to Maven. The following changes have been made:
+
+- **Build system**: Ant (`build.xml`) → Maven (`pom.xml`)
+- **Dependencies**: `lib/*.jar` → Maven dependencies
+- **Test resources**: `tests/` → `src/test/resources/`
+- **Node.js tests**: `nodejs_tests/` → `tests/node/`
+- **Documentation**: Consolidated in `docs/` directory
+- **Changelog**: `doc/CHANGELOG` → `CHANGELOG.md`
+
+For contributors familiar with the old structure, please refer to the documentation in `docs/` for the new organization.
 
 Build Status
 ------------
