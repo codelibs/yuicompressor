@@ -5,8 +5,6 @@ YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 
 **Version**: 2.4.10-SNAPSHOT
 **Group ID**: org.codelibs
-**Java**: 11+
-**Rhino**: 1.7.14
 
 The YUI Compressor is a JavaScript compressor which, in addition to removing
 comments and white-spaces, obfuscates local variables using the smallest
@@ -20,7 +18,7 @@ on which compressor is being used is made on the file extension (js or css)
 Building
 --------
 
-This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
+This project uses Maven for build management (requires Maven 3.8+):
 
     mvn clean package
 
