@@ -1,169 +1,147 @@
-# Rhino 1.8.0 Migration Plan
+# Rhino Migration Progress
 
-## Current Status: ⚠️ COMPILATION ERRORS
+## Current Status: 🔧 IN PROGRESS - Testing 1.7.7.2
 
-The migration from Rhino 1.7R2 to 1.8.0 has revealed significant API incompatibilities.
+### Migration Attempts
 
-### Completed Steps
+#### Attempt 1: Rhino 1.8.0 ❌
+- **Result**: 100+ compilation errors
+- **Issues**: Major API breaking changes
+  - Deleted classes: `UintMap`, `ObjToIntMap`, `ObjArray`, `ScriptOrFnNode`, `Node.Scope`, `FunctionNode`
+  - Many IRFactory methods removed or made private
+  - Method signature changes across the board
 
-1. ✅ **Dependency Update**: Updated pom.xml to use `org.mozilla:rhino-all:1.8.0`
-2. ✅ **Custom Rhino Files Retained**: Kept customized classes for YUICompressor functionality
-3. ⚠️ **Build Attempted**: Compilation failed with 100+ errors
+#### Attempt 2: Rhino 1.7.14 ❌
+- **Result**: 100+ compilation errors
+- **Issues**: Still too many breaking changes
+  - IRFactory methods made private: `createAssignment`, `createBinary`, `createIf`, etc.
+  - AST restructuring: `Node.Scope` → `org.mozilla.javascript.ast.Scope`
+  - Deleted methods: `createScript`, `createLeaf`, `addChildToBack`, etc.
 
-## Compilation Errors Analysis
+#### Attempt 3: Rhino 1.7.7.2 (Current) 🔄
+- **Status**: Testing in progress
+- **Rationale**: Released in 2017, closer to our 1.7R2 base (2011)
+- **Fixes Applied**:
+  - ✅ Fixed Hashtable ambiguity (explicitly use `java.util.Hashtable`)
+  - ✅ Fixed `stringToNumber()` call (added 4th parameter)
+- **Pending**: Build verification when network available
 
-### 1. Deleted/Removed Classes
+### Fixes Applied
 
-The following internal classes were removed in Rhino 1.8.0 (as mentioned in release notes):
+#### 1. Hashtable Namespace Conflict
+**File**: `JavaScriptCompressor.java:534`
 
-- ❌ `UintMap` - Replaced with standard Java collections
-- ❌ `ObjToIntMap` - Replaced with standard Java collections
-- ❌ `ObjArray` - Replaced with `java.util.ArrayList`
-- ❌ `ScriptOrFnNode` - Merged into AST node hierarchy
-- ❌ `Node.Scope` - Changed to `org.mozilla.javascript.ast.Scope`
-- ❌ `FunctionNode` - Changed to `org.mozilla.javascript.ast.FunctionNode`
+**Before**:
+```java
+private Hashtable indexedScopes = new Hashtable();
+```
 
-**Used in our custom files:**
-- `Decompiler.java`: Uses `UintMap`, `FunctionNode`
-- `TokenStream.java`: Uses `ObjToIntMap`
-- `Parser.java`: Uses `ScriptOrFnNode`, `Node.Scope`, `ObjArray`, `FunctionNode`
+**After**:
+```java
+private java.util.Hashtable indexedScopes = new java.util.Hashtable();
+```
 
-### 2. API Method Signature Changes
+**Reason**: Rhino 1.7.14+ has its own `org.mozilla.javascript.Hashtable` class causing ambiguity.
 
-Many IRFactory methods have changed signatures or been removed:
+#### 2. ScriptRuntime.stringToNumber() Signature
+**File**: `TokenStream.java:494`
 
-- `IRFactory` constructor now requires different parameters
-- `createScript()` → Removed or changed
-- `createName(String)` → Changed signature
-- `createBlock(int)` → Changed signature
-- `createLoopNode()` → Added parameters
-- `createSwitch()` → Removed
-- `createWhile()`, `createDoWhile()` → Changed signatures
-- `createForIn()` → Added parameters (now requires AST nodes)
-- `createCatch()` → Changed parameters
-- `createTryCatchFinally()` → Added parameters
-- `createThrow()`, `createBreak()`, `createContinue()` → Changed/removed
-- `stringToNumber()` → Added parameters
+**Before**:
+```java
+dval = ScriptRuntime.stringToNumber(numString, 0, base);
+```
 
-### 3. Access Modifier Changes
+**After**:
+```java
+// Rhino 1.7.14+ requires additional parameter (radix)
+dval = ScriptRuntime.stringToNumber(numString, 0, base, 10);
+```
 
-Several methods are now private (were package-private or public):
+**Reason**: Method signature changed from 3 to 4-5 parameters in Rhino 1.7.14+.
 
-- ❌ `createAssignment()` → private
-- ❌ `addSwitchCase()` → private
-- ❌ `closeSwitch()` → private
-- ❌ `createBinary()` → private
+### Version Comparison
 
-### 4. Namespace Conflicts
+| Version | Release | Status | Issues |
+|---------|---------|--------|--------|
+| 1.7R2   | 2011    | Current | Old, security concerns |
+| 1.7R5   | 2015    | Untested | - |
+| 1.7.7.2 | 2017    | Testing | Minor API changes |
+| 1.7.14  | 2022    | Failed  | IRFactory methods private |
+| 1.8.0   | 2024    | Failed  | Major API rewrite |
 
-- `java.util.Hashtable` vs `org.mozilla.javascript.Hashtable` ambiguity
+### Remaining Challenges
 
-## Migration Strategy Options
+Even with Rhino 1.7.7.2, we may face:
 
-### Option 1: Complete Rewrite (Recommended for Long-term)
+1. **IRFactory API Changes**: Some methods may have changed signatures
+2. **AST Node Structure**: May have evolved between 1.7R2 and 1.7.7.2
+3. **ScriptOrFnNode**: May have been refactored
+4. **Custom Token IDs**: Need to verify no conflicts (CONDCOMMENT=160, KEEPCOMMENT=161)
 
-**Pros:**
-- Future-proof
-- Uses modern Rhino APIs
-- Better maintainability
+### Next Steps
 
-**Cons:**
-- Significant development effort
-- Need to reimplement CONDCOMMENT/KEEPCOMMENT functionality
+1. **Complete Build with 1.7.7.2**
+   - Verify compilation success
+   - Fix any remaining minor errors
+   - Run test suite
 
-**Approach:**
-1. Remove custom Rhino classes entirely
-2. Use Rhino 1.8.0's AST API directly
-3. Implement comment preservation using TokenStream hooks or post-processing
+2. **If 1.7.7.2 Works**
+   - Document any behavior changes
+   - Test comment preservation (KEEPCOMMENT, CONDCOMMENT)
+   - Run integration tests
+   - Consider this as stable intermediate version
 
-### Option 2: Incremental Migration (Recommended for Now)
+3. **If 1.7.7.2 Fails**
+   - Try even older versions (1.7R5, 1.7R4, 1.7R3)
+   - Consider creating compatibility shim layer
+   - Document minimum viable Rhino version
 
-**Pros:**
-- Maintains existing functionality
-- Step-by-step approach
-- Can be done incrementally
+4. **Future Migration to 1.8.0**
+   - Would require complete rewrite of custom classes
+   - Use modern AST API (org.mozilla.javascript.ast.*)
+   - Reimplement comment preservation differently
+   - Estimated effort: Several days of development
 
-**Cons:**
-- Still significant effort
-- May need to maintain custom classes longer
+### Custom Functionality Preserved
 
-**Approach:**
-1. Replace deleted classes with Java standard equivalents
-2. Update method signatures to match Rhino 1.8.0
-3. Adapt to new AST structure
-4. Maintain CONDCOMMENT/KEEPCOMMENT tokens
+Our custom Rhino modifications add two essential tokens:
 
-### Option 3: Use Intermediate Version
+- **CONDCOMMENT (160)**: IE conditional compilation comments
+  ```javascript
+  /*@cc_on @if (@_win32) ... @end @*/
+  ```
 
-Try Rhino 1.7.14 (2022) first, which may have better compatibility:
+- **KEEPCOMMENT (161)**: License/important comments
+  ```javascript
+  /*! Copyright (c) ... */
+  ```
 
-**Pros:**
-- Smaller API changes
-- Still gets security updates and bug fixes
-- Easier migration path
+These are critical for:
+- Preserving license headers during minification
+- Supporting IE conditional compilation
+- Maintaining required attribution comments
 
-**Cons:**
-- Not the latest version
-- Will eventually need to migrate to 1.8.0
+### Build History
 
-## Recommended Action Plan
+```
+484bc98 - Upgrade Rhino dependency from 1.7R2 to 1.8.0
+9142545 - Document Rhino 1.8.0 compatibility issues and try 1.7.14
+<next>  - Fix Hashtable/stringToNumber, try Rhino 1.7.7.2
+```
 
-### Phase 1: Try Intermediate Version (1.7.14)
+### References
 
-1. Update pom.xml to use Rhino 1.7.14
-2. Attempt build
-3. If successful, run tests
-4. Document any remaining issues
+- [Rhino Releases](https://github.com/mozilla/rhino/releases)
+- [Rhino 1.7.7.2 Release Notes](https://github.com/mozilla/rhino/releases/tag/Rhino1_7_7_2_RELEASE)
+- [Rhino 1.8.0 Breaking Changes](https://github.com/mozilla/rhino/releases/tag/Rhino1_8_0_Release)
+- [YUI Compressor Documentation](https://github.com/yui/yuicompressor)
 
-### Phase 2: If 1.7.14 works, plan for 1.8.0
+## Conclusion
 
-1. Identify specific incompatibilities with 1.8.0
-2. Plan incremental updates to custom files
-3. Create compatibility layer if needed
+The migration from Rhino 1.7R2 to the latest version is more complex than anticipated due to significant internal API changes. We're taking a pragmatic approach:
 
-### Phase 3: If 1.7.14 doesn't work, proceed with full migration
+1. **Short-term**: Find the newest compatible version (testing 1.7.7.2)
+2. **Medium-term**: Use that version with minimal changes
+3. **Long-term**: Plan complete rewrite for Rhino 1.8.0+ compatibility
 
-1. **Replace deleted classes:**
-   ```java
-   // UintMap → HashMap<Integer, Object>
-   // ObjToIntMap → HashMap<Object, Integer>
-   // ObjArray → ArrayList<Object>
-   ```
-
-2. **Update Parser.java:**
-   - Use `org.mozilla.javascript.ast.*` classes
-   - Update IRFactory usage
-   - Fix method signatures
-
-3. **Update TokenStream.java:**
-   - Replace ObjToIntMap with HashMap
-   - Update stringToNumber calls
-
-4. **Update Decompiler.java:**
-   - Replace UintMap with HashMap
-   - Update FunctionNode references
-
-5. **Update JavaScriptCompressor.java:**
-   - Fix Hashtable ambiguity (use `java.util.Hashtable` explicitly)
-
-## Custom Token Support
-
-The customized Rhino files add two essential tokens for comment handling:
-- **CONDCOMMENT (160)**: JScript conditional comments `/*@cc_on ... @*/`
-- **KEEPCOMMENT (161)**: Important comments to preserve `/*! ... */`
-
-**Critical**: Must ensure these token IDs don't conflict with new Rhino 1.8.0 tokens.
-
-## Next Steps
-
-1. Try Rhino 1.7.14 first (pragmatic approach)
-2. If that fails, begin systematic class replacement
-3. Update RHINO_MIGRATION.md with progress
-4. Commit incremental fixes
-
-## References
-
-- [Rhino 1.8.0 Release Notes](https://github.com/mozilla/rhino/releases/tag/Rhino1_8_0_Release)
-- [Rhino 1.7.14 Release Notes](https://github.com/mozilla/rhino/releases/tag/Rhino1_7_14_Release)
-- [Rhino Migration Guide](https://mozilla.github.io/rhino/)
-- [Remove obsolete classes PR #1562](https://github.com/mozilla/rhino/pull/1562)
+This incremental approach minimizes risk while still improving security and compatibility.

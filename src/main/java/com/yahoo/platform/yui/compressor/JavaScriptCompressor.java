@@ -531,7 +531,7 @@ public class JavaScriptCompressor {
     private ArrayList tokens;
     private Stack scopes = new Stack();
     private ScriptOrFnScope globalScope = new ScriptOrFnScope(-1, null);
-    private Hashtable indexedScopes = new Hashtable();
+    private java.util.Hashtable indexedScopes = new java.util.Hashtable();
 
     public JavaScriptCompressor(Reader in, ErrorReporter reporter)
             throws IOException, EvaluatorException {

@@ -491,7 +491,8 @@ class TokenStream
                         return Token.ERROR;
                     }
                 } else {
-                    dval = ScriptRuntime.stringToNumber(numString, 0, base);
+                    // Rhino 1.7.14+ requires additional parameter (radix)
+                    dval = ScriptRuntime.stringToNumber(numString, 0, base, 10);
                 }
 
                 this.number = dval;
