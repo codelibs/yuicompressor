@@ -58,23 +58,20 @@
   </properties>
 
   <dependencies>
-    <!-- Command line argument parser - using system scope for legacy JAR -->
+    <!-- Command line argument parser -->
     <dependency>
-      <groupId>net.sf.jargs</groupId>
-      <artifactId>jargs</artifactId>
-      <version>1.0</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/lib/jargs-1.0.jar</systemPath>
+      <groupId>args4j</groupId>
+      <artifactId>args4j</artifactId>
+      <version>2.37</version>
     </dependency>
 
-    <!-- Mozilla Rhino JavaScript engine - using system scope for legacy JAR -->
+    <!-- Mozilla Rhino JavaScript engine - version 1.7R2 from Maven Central -->
     <!-- Note: This project includes modified Rhino files in src/main/java/org/mozilla/javascript -->
+    <!-- The modified classes (Parser, Token, TokenStream, Decompiler) override the standard ones -->
     <dependency>
-      <groupId>org.mozilla</groupId>
-      <artifactId>rhino</artifactId>
+      <groupId>rhino</groupId>
+      <artifactId>js</artifactId>
       <version>1.7R2</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/lib/rhino-1.7R2.jar</systemPath>
     </dependency>
 
     <!-- Test dependencies -->
@@ -143,7 +140,7 @@
                 </filter>
                 <!-- Exclude original Rhino classes since we have modified versions -->
                 <filter>
-                  <artifact>org.mozilla:rhino</artifact>
+                  <artifact>rhino:js</artifact>
                   <excludes>
                     <exclude>org/mozilla/javascript/Parser.class</exclude>
                     <exclude>org/mozilla/javascript/Token.class</exclude>
@@ -153,13 +150,6 @@
                 </filter>
               </filters>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <!-- Include system scope dependencies in the shaded JAR -->
-              <artifactSet>
-                <includes>
-                  <include>net.sf.jargs:jargs</include>
-                  <include>org.mozilla:rhino</include>
-                </includes>
-              </artifactSet>
             </configuration>
           </execution>
         </executions>
