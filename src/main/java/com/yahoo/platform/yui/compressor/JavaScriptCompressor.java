@@ -154,6 +154,26 @@ public class JavaScriptCompressor {
     public JavaScriptCompressor(Reader in, ErrorReporter reporter)
             throws IOException, EvaluatorException {
 
+        // Use default error reporter if none provided
+        if (reporter == null) {
+            reporter = new ErrorReporter() {
+                public void warning(String message, String sourceName,
+                                  int line, String lineSource, int lineOffset) {
+                    // Silent by default
+                }
+
+                public void error(String message, String sourceName,
+                                int line, String lineSource, int lineOffset) {
+                    System.err.println("Error: " + message);
+                }
+
+                public EvaluatorException runtimeError(String message, String sourceName,
+                                                      int line, String lineSource, int lineOffset) {
+                    return new EvaluatorException(message);
+                }
+            };
+        }
+
         this.errorReporter = reporter;
         this.commentPreserver = new CommentPreserver();
 
