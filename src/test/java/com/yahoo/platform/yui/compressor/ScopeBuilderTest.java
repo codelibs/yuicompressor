@@ -1,4 +1,4 @@
-package org.codelibs.yuicompressor;
+package com.yahoo.platform.yui.compressor;
 
 import static org.junit.Assert.*;
 
@@ -8,10 +8,6 @@ import org.junit.Test;
 import org.mozilla.javascript.CompilerEnvirons;
 import org.mozilla.javascript.Parser;
 import org.mozilla.javascript.ast.AstRoot;
-
-import com.yahoo.platform.yui.compressor.JavaScriptIdentifier;
-import com.yahoo.platform.yui.compressor.ScriptOrFnScope;
-import com.yahoo.platform.yui.compressor.ScopeBuilder;
 
 /**
  * Test cases for ScopeBuilder
