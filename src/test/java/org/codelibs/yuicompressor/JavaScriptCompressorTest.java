@@ -158,7 +158,7 @@ public class JavaScriptCompressorTest {
 
     @Test
     public void testPropertyAccessNotMunged() throws Exception {
-        String input = "var obj = {}; obj.property = 42; return obj.property;";
+        String input = "var obj = {}; obj.property = 42; var result = obj.property;";
 
         JavaScriptCompressor compressor = new JavaScriptCompressor(
             new StringReader(input), null);
@@ -260,7 +260,8 @@ public class JavaScriptCompressorTest {
 
     @Test
     public void testMultipleVariableDeclarationsMunging() throws Exception {
-        String input = "var longName1 = 1, longName2 = 2, longName3 = 3;";
+        // Wrap in function since global variables are not munged for safety
+        String input = "function test() { var longName1 = 1, longName2 = 2, longName3 = 3; return longName1 + longName2 + longName3; }";
 
         JavaScriptCompressor compressor = new JavaScriptCompressor(
             new StringReader(input), null);

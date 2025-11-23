@@ -229,7 +229,17 @@ public class MungedCodeGenerator {
     }
 
     private void visitStringLiteral(StringLiteral str) {
-        output.append(str.toSource()); // Keep quotes intact
+        // Explicitly preserve quotes and content
+        String value = str.getValue();
+        char quoteChar = str.getQuoteCharacter();
+        if (quoteChar == '"' || quoteChar == '\'') {
+            output.append(quoteChar);
+            output.append(value);
+            output.append(quoteChar);
+        } else {
+            // Fallback to toSource() if quote character is not set
+            output.append(str.toSource());
+        }
     }
 
     private void visitInfixExpression(InfixExpression expr, String operator) {
