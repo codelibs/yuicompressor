@@ -272,6 +272,10 @@ public class JavaScriptCompressor {
                 MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge);
                 compressed = generator.generate(this.ast);
 
+                // Extract string literals to protect them from whitespace compression
+                java.util.List<String> stringLiterals = new java.util.ArrayList<>();
+                compressed = extractStringLiterals(compressed, stringLiterals);
+
                 // Remove extra whitespace
                 compressed = compressed.replaceAll("\\s+", " ");
                 compressed = compressed.replaceAll(" \\{", "{");
@@ -286,6 +290,9 @@ public class JavaScriptCompressor {
                 compressed = compressed.replaceAll("; ", ";");
                 compressed = compressed.replaceAll(" ,", ",");
                 compressed = compressed.replaceAll(", ", ",");
+
+                // Restore string literals
+                compressed = restoreStringLiterals(compressed, stringLiterals);
 
                 // Insert preserved comments
                 compressed = commentPreserver.insertComments(compressed);
@@ -327,5 +334,72 @@ public class JavaScriptCompressor {
         }
 
         return result.toString();
+    }
+
+    /**
+     * Extract string literals from the code and replace them with placeholders.
+     * This protects string contents from being modified by whitespace compression.
+     *
+     * @param code The JavaScript code
+     * @param stringLiterals List to store the extracted string literals
+     * @return Code with string literals replaced by placeholders
+     */
+    private String extractStringLiterals(String code, java.util.List<String> stringLiterals) {
+        StringBuilder result = new StringBuilder();
+        int length = code.length();
+        int i = 0;
+
+        while (i < length) {
+            char c = code.charAt(i);
+
+            // Check for string literal (single or double quote)
+            if (c == '"' || c == '\'') {
+                char quoteChar = c;
+                StringBuilder literal = new StringBuilder();
+                literal.append(c);
+                i++;
+
+                // Find the end of the string literal, handling escapes
+                boolean escaped = false;
+                while (i < length) {
+                    char ch = code.charAt(i);
+                    literal.append(ch);
+
+                    if (escaped) {
+                        escaped = false;
+                    } else if (ch == '\\') {
+                        escaped = true;
+                    } else if (ch == quoteChar) {
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+
+                // Store the literal and add a placeholder
+                stringLiterals.add(literal.toString());
+                result.append("___STRING_LITERAL_" + (stringLiterals.size() - 1) + "___");
+            } else {
+                result.append(c);
+                i++;
+            }
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * Restore string literals that were replaced with placeholders.
+     *
+     * @param code Code with placeholders
+     * @param stringLiterals List of extracted string literals
+     * @return Code with string literals restored
+     */
+    private String restoreStringLiterals(String code, java.util.List<String> stringLiterals) {
+        String result = code;
+        for (int i = 0; i < stringLiterals.size(); i++) {
+            result = result.replace("___STRING_LITERAL_" + i + "___", stringLiterals.get(i));
+        }
+        return result;
     }
 }
