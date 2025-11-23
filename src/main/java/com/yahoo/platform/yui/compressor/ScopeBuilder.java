@@ -93,7 +93,11 @@ public class ScopeBuilder {
             AstNode parent = name.getParent();
             if (parent instanceof PropertyGet) {
                 PropertyGet pg = (PropertyGet) parent;
-                if (pg.getProperty() == name) {
+                AstNode property = pg.getProperty();
+                // Use identifier comparison instead of identity comparison
+                if (property instanceof Name &&
+                    ((Name) property).getIdentifier().equals(identifier) &&
+                    property.getAbsolutePosition() == name.getAbsolutePosition()) {
                     return; // This is a property access, not a variable reference
                 }
             }

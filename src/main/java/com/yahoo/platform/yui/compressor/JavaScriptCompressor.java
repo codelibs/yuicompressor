@@ -146,6 +146,10 @@ public class JavaScriptCompressor {
         reserved.add("with");
     }
 
+    // Pattern for matching special comments that should be preserved
+    private static final java.util.regex.Pattern SPECIAL_COMMENT_PATTERN =
+        java.util.regex.Pattern.compile("/\\*(!|@cc_on|@if|@elif|@else|@end|@set|@_)([\\s\\S]*?)\\*/");
+
     private final CompilerEnvirons compilerEnv;
     private final ErrorReporter errorReporter;
     private final CommentPreserver commentPreserver;
@@ -195,7 +199,7 @@ public class JavaScriptCompressor {
         this.compilerEnv = new CompilerEnvirons();
         this.compilerEnv.setRecordingComments(false);
         this.compilerEnv.setRecordingLocalJsDocComments(false);
-        this.compilerEnv.setLanguageVersion(Context.VERSION_ES6);
+        this.compilerEnv.setLanguageVersion(Context.VERSION_1_8);
         this.compilerEnv.setGenerateDebugInfo(false);
         this.compilerEnv.setErrorReporter(reporter);
 
@@ -217,9 +221,7 @@ public class JavaScriptCompressor {
      * Scan source code for special comments that should be preserved
      */
     private void scanForSpecialComments(String source) {
-        // Pattern to match block comments: /* ... */
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("/\\*(!|@cc_on|@if|@elif|@else|@end|@set|@_)([\\s\\S]*?)\\*/");
-        java.util.regex.Matcher matcher = pattern.matcher(source);
+        java.util.regex.Matcher matcher = SPECIAL_COMMENT_PATTERN.matcher(source);
 
         while (matcher.find()) {
             String commentContent = matcher.group(1) + matcher.group(2);

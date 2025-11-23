@@ -101,6 +101,11 @@ public class MungedCodeGenerator {
                 break;
             default:
                 // Fallback: use toSource() for unsupported nodes
+                // This may produce unminified output for complex node types
+                if (System.getProperty("yuicompressor.debug") != null) {
+                    System.err.println("Warning: Using toSource() for unsupported node type: " +
+                        type + " (" + node.getClass().getSimpleName() + ")");
+                }
                 output.append(node.toSource());
                 break;
         }
@@ -249,7 +254,13 @@ public class MungedCodeGenerator {
     private void visitPropertyGet(PropertyGet pg) {
         visitNode(pg.getTarget());
         output.append(".");
-        output.append(pg.getProperty().toSource());
+        // Use identifier directly instead of toSource() for cleaner output
+        AstNode property = pg.getProperty();
+        if (property instanceof Name) {
+            output.append(((Name) property).getIdentifier());
+        } else {
+            output.append(property.toSource());
+        }
     }
 
     private void visitObjectLiteral(ObjectLiteral obj) {

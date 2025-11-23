@@ -20,6 +20,10 @@ import java.util.*;
  */
 public class CommentPreserver {
 
+    // Pattern for matching conditional comment markers
+    private static final java.util.regex.Pattern CONDITIONAL_PATTERN =
+        java.util.regex.Pattern.compile("(?s).*@(if|elif|else|end|set|_).*");
+
     /**
      * Type of special comment
      */
@@ -120,8 +124,7 @@ public class CommentPreserver {
 
         // Check for CONDITIONAL comment: /*@cc_on ... @ * /
         // Also check for @if, @elif, @else, @end patterns
-        if (value.startsWith("@cc_on") ||
-            value.matches("(?s).*@(if|elif|else|end|set|_).*")) {
+        if (value.startsWith("@cc_on") || CONDITIONAL_PATTERN.matcher(value).matches()) {
             return CommentType.CONDITIONAL;
         }
 
