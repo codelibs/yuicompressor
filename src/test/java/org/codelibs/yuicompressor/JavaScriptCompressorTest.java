@@ -310,5 +310,208 @@ public class JavaScriptCompressorTest {
         assertTrue("IIFE should be preserved", result.contains("function"));
         assertTrue("Should contain parentheses", result.contains("()"));
     }
+
+    // Tests for string literal protection during whitespace compression
+
+    @Test
+    public void testStringWithCommaSpace() throws Exception {
+        String input = "var s = \"a, b, c\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with comma-space should be preserved", result.contains("a, b, c"));
+    }
+
+    @Test
+    public void testStringWithSemicolonSpace() throws Exception {
+        String input = "var s = \"statement; another\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with semicolon-space should be preserved", result.contains("statement; another"));
+    }
+
+    @Test
+    public void testStringWithBracesAndSpaces() throws Exception {
+        String input = "var s = \"{ key: value }\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with braces and spaces should be preserved", result.contains("{ key: value }"));
+    }
+
+    @Test
+    public void testStringWithParenthesesAndSpaces() throws Exception {
+        String input = "var s = \"call( arg )\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with parentheses and spaces should be preserved", result.contains("call( arg )"));
+    }
+
+    @Test
+    public void testMultipleStringsInStatement() throws Exception {
+        String input = "var a = \"Hello, World!\", b = \"foo; bar\", c = \"( test )\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("First string should be preserved", result.contains("Hello, World!"));
+        assertTrue("Second string should be preserved", result.contains("foo; bar"));
+        assertTrue("Third string should be preserved", result.contains("( test )"));
+    }
+
+    @Test
+    public void testStringWithEscapedQuotes() throws Exception {
+        String input = "var s = \"He said \\\"Hello, World!\\\"\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with escaped quotes should be preserved",
+            result.contains("He said \\\"Hello, World!\\\""));
+    }
+
+    @Test
+    public void testStringWithEscapedBackslash() throws Exception {
+        String input = "var s = \"path\\\\to\\\\file\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with escaped backslashes should be preserved",
+            result.contains("path\\\\to\\\\file"));
+    }
+
+    @Test
+    public void testSingleQuotedString() throws Exception {
+        String input = "var s = 'Hello, World!';";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Single-quoted string should be preserved", result.contains("Hello, World!"));
+    }
+
+    @Test
+    public void testMixedQuoteStrings() throws Exception {
+        String input = "var a = \"double, quotes\", b = 'single; quotes';";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Double-quoted string should be preserved", result.contains("double, quotes"));
+        assertTrue("Single-quoted string should be preserved", result.contains("single; quotes"));
+    }
+
+    @Test
+    public void testStringWithAllCompressionPatterns() throws Exception {
+        String input = "var s = \"a, b; c{ d }( e )\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with all compression patterns should be preserved",
+            result.contains("a, b; c{ d }( e )"));
+    }
+
+    @Test
+    public void testAdjacentStrings() throws Exception {
+        String input = "var s = \"first, \" + \"second; \" + \"third{ }\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("First string should be preserved", result.contains("first, "));
+        assertTrue("Second string should be preserved", result.contains("second; "));
+        assertTrue("Third string should be preserved", result.contains("third{ }"));
+    }
+
+    @Test
+    public void testStringInFunctionCall() throws Exception {
+        String input = "console.log(\"Hello, World!\");";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String in function call should be preserved", result.contains("Hello, World!"));
+    }
+
+    @Test
+    public void testStringWithNewlineEscape() throws Exception {
+        String input = "var s = \"line1\\nline2\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with newline escape should be preserved", result.contains("line1\\nline2"));
+    }
+
+    @Test
+    public void testStringWithTabEscape() throws Exception {
+        String input = "var s = \"col1\\tcol2\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with tab escape should be preserved", result.contains("col1\\tcol2"));
+    }
+
+    @Test
+    public void testEmptyString() throws Exception {
+        String input = "var s = \"\";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Empty string should be preserved", result.contains("\"\"") || result.contains("''"));
+    }
+
+    @Test
+    public void testStringWithOnlySpaces() throws Exception {
+        String input = "var s = \"   \";";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("String with only spaces should preserve at least some spaces",
+            result.contains("\"") && result.length() > 10);
+    }
 }
 
