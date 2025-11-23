@@ -66,13 +66,12 @@
       <version>2.37</version>
     </dependency>
 
-    <!-- Mozilla Rhino JavaScript engine - version 1.7R2 from Maven Central -->
-    <!-- Note: This project includes modified Rhino files in src/main/java/org/mozilla/javascript -->
-    <!-- The modified classes (Parser, Token, TokenStream, Decompiler) override the standard ones -->
+    <!-- Mozilla Rhino JavaScript engine - upgraded to latest version -->
+    <!-- Version 1.8.0 (2024) with modern AST API -->
     <dependency>
-      <groupId>rhino</groupId>
-      <artifactId>js</artifactId>
-      <version>1.7R2</version>
+      <groupId>org.mozilla</groupId>
+      <artifactId>rhino</artifactId>
+      <version>1.8.0</version>
     </dependency>
 
     <!-- Test dependencies -->
@@ -138,16 +137,6 @@
                     <exclude>META-INF/*.SF</exclude>
                     <exclude>META-INF/*.DSA</exclude>
                     <exclude>META-INF/*.RSA</exclude>
-                  </excludes>
-                </filter>
-                <!-- Exclude original Rhino classes since we have modified versions -->
-                <filter>
-                  <artifact>rhino:js</artifact>
-                  <excludes>
-                    <exclude>org/mozilla/javascript/Parser.class</exclude>
-                    <exclude>org/mozilla/javascript/Token.class</exclude>
-                    <exclude>org/mozilla/javascript/TokenStream.class</exclude>
-                    <exclude>org/mozilla/javascript/Decompiler.class</exclude>
                   </excludes>
                 </filter>
               </filters>
