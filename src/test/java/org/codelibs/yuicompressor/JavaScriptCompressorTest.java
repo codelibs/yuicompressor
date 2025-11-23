@@ -513,5 +513,207 @@ public class JavaScriptCompressorTest {
         assertTrue("String with only spaces should preserve at least some spaces",
             result.contains("\"") && result.length() > 10);
     }
+
+    // Tests for control flow structures and operators
+
+    @Test
+    public void testIfElseStatement() throws Exception {
+        String input = "function test(x) { if (x > 0) { return true; } else { return false; } }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain function keyword", result.contains("function"));
+        assertTrue("Should contain if keyword", result.contains("if"));
+        assertTrue("Should contain else keyword", result.contains("else"));
+        assertTrue("Should contain return keyword", result.contains("return"));
+    }
+
+    @Test
+    public void testForLoop() throws Exception {
+        String input = "for (var i = 0; i < 10; i++) { sum += i; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain for keyword", result.contains("for"));
+        assertFalse("Should not contain syntax errors", result.isEmpty());
+    }
+
+    @Test
+    public void testWhileLoop() throws Exception {
+        String input = "var i = 0; while (i < 10) { i++; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain while keyword", result.contains("while"));
+        assertFalse("Should not be empty", result.isEmpty());
+    }
+
+    @Test
+    public void testTryCatchFinally() throws Exception {
+        String input = "try { riskyOp(); } catch (e) { handleError(e); } finally { cleanup(); }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain try keyword", result.contains("try"));
+        assertTrue("Should contain catch keyword", result.contains("catch"));
+        assertTrue("Should contain finally keyword", result.contains("finally"));
+    }
+
+    @Test
+    public void testSwitchCase() throws Exception {
+        String input = "switch (x) { case 1: return 'one'; case 2: return 'two'; default: return 'other'; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain switch keyword", result.contains("switch"));
+        assertTrue("Should contain case keyword", result.contains("case"));
+        assertTrue("Should contain default keyword", result.contains("default"));
+    }
+
+    @Test
+    public void testRegexLiteral() throws Exception {
+        String input = "var pattern = /[a-z]+/gi; var result = pattern.test('hello');";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain regex pattern", result.contains("/[a-z]+/gi") || result.contains("RegExp"));
+        assertTrue("Should contain test method call", result.contains("test"));
+    }
+
+    @Test
+    public void testBooleanLiterals() throws Exception {
+        String input = "var t = true; var f = false; var n = null;";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain true", result.contains("true"));
+        assertTrue("Should contain false", result.contains("false"));
+        assertTrue("Should contain null", result.contains("null"));
+    }
+
+    @Test
+    public void testTernaryOperator() throws Exception {
+        String input = "var result = x > 0 ? 'positive' : 'negative';";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain ternary operator", result.contains("?") && result.contains(":"));
+        assertTrue("Should contain positive", result.contains("positive"));
+        assertTrue("Should contain negative", result.contains("negative"));
+    }
+
+    @Test
+    public void testComparisonOperators() throws Exception {
+        String input = "var a = x == y; var b = x != y; var c = x < y; var d = x > y; var e = x <= y; var f = x >= y;";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain comparison operators",
+            result.contains("==") || result.contains("!=") || result.contains("<") || result.contains(">"));
+    }
+
+    @Test
+    public void testLogicalOperators() throws Exception {
+        String input = "var result = a && b || c; var negated = !d;";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain logical operators",
+            result.contains("&&") || result.contains("||") || result.contains("!"));
+    }
+
+    @Test
+    public void testNewOperator() throws Exception {
+        String input = "var obj = new Object(); var arr = new Array(10);";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain new keyword", result.contains("new"));
+        assertTrue("Should contain Object", result.contains("Object"));
+        assertTrue("Should contain Array", result.contains("Array"));
+    }
+
+    @Test
+    public void testThisKeyword() throws Exception {
+        String input = "function MyClass() { this.value = 42; this.getValue = function() { return this.value; }; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain this keyword", result.contains("this"));
+        assertTrue("Should contain value property", result.contains("value"));
+    }
+
+    @Test
+    public void testIncrementDecrement() throws Exception {
+        String input = "var x = 0; x++; ++x; x--; --x;";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain increment/decrement", result.contains("++") || result.contains("--"));
+    }
+
+    @Test
+    public void testComplexNestedStructure() throws Exception {
+        String input = "function processData(data) { " +
+                      "for (var i = 0; i < data.length; i++) { " +
+                      "if (data[i].valid) { " +
+                      "try { " +
+                      "var result = data[i].value > 0 ? 'positive' : 'negative'; " +
+                      "results.push(result); " +
+                      "} catch (e) { " +
+                      "console.error(e); " +
+                      "} } } }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertTrue("Should contain function keyword", result.contains("function"));
+        assertTrue("Should contain for keyword", result.contains("for"));
+        assertTrue("Should contain if keyword", result.contains("if"));
+        assertTrue("Should contain try keyword", result.contains("try"));
+        assertTrue("Should contain catch keyword", result.contains("catch"));
+        assertFalse("Should not be empty", result.isEmpty());
+    }
 }
 
