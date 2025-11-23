@@ -8,6 +8,7 @@
  */
 package com.yahoo.platform.yui.compressor;
 
+import org.mozilla.javascript.Node;
 import org.mozilla.javascript.ast.*;
 import java.util.*;
 
@@ -100,7 +101,7 @@ public class ScopeBuilder {
             // Mark the identifier as referenced
             JavaScriptIdentifier id = findIdentifier(identifier, currentScope);
             if (id != null) {
-                id.incrementRefCount();
+                id.incrementRefcount();
             }
             return;
         }
