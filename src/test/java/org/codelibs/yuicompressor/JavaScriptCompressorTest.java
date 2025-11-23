@@ -573,7 +573,7 @@ public class JavaScriptCompressorTest {
 
     @Test
     public void testSwitchCase() throws Exception {
-        String input = "switch (x) { case 1: return 'one'; case 2: return 'two'; default: return 'other'; }";
+        String input = "function test(x) { switch (x) { case 1: return 'one'; case 2: return 'two'; default: return 'other'; } }";
 
         JavaScriptCompressor compressor = new JavaScriptCompressor(
             new StringReader(input), null);
