@@ -229,35 +229,62 @@ public class MungedCodeGenerator {
     }
 
     private void visitStringLiteral(StringLiteral str) {
-        // Use toSource() which includes quotes and proper escaping
-        String source = str.toSource();
-        if (source != null && !source.isEmpty()) {
-            output.append(source);
-        } else {
-            // Fallback: manually construct the string literal
-            String value = str.getValue();
-            char quoteChar = str.getQuoteCharacter();
-            if (quoteChar == '"' || quoteChar == '\'') {
-                output.append(quoteChar);
-                // Escape special characters in the value
-                if (value != null) {
-                    output.append(value.replace("\\", "\\\\")
-                                      .replace("\"", "\\\"")
-                                      .replace("'", "\\'")
-                                      .replace("\n", "\\n")
-                                      .replace("\r", "\\r")
-                                      .replace("\t", "\\t"));
+        // Directly construct the string literal with proper escaping
+        String value = str.getValue();
+        char quoteChar = str.getQuoteCharacter();
+
+        // Default to double quotes if quote character is not set
+        if (quoteChar != '"' && quoteChar != '\'') {
+            quoteChar = '"';
+        }
+
+        output.append(quoteChar);
+
+        if (value != null) {
+            // Escape special characters based on the quote character used
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                switch (c) {
+                    case '\\':
+                        output.append("\\\\");
+                        break;
+                    case '\n':
+                        output.append("\\n");
+                        break;
+                    case '\r':
+                        output.append("\\r");
+                        break;
+                    case '\t':
+                        output.append("\\t");
+                        break;
+                    case '\b':
+                        output.append("\\b");
+                        break;
+                    case '\f':
+                        output.append("\\f");
+                        break;
+                    case '"':
+                        if (quoteChar == '"') {
+                            output.append("\\\"");
+                        } else {
+                            output.append(c);
+                        }
+                        break;
+                    case '\'':
+                        if (quoteChar == '\'') {
+                            output.append("\\'");
+                        } else {
+                            output.append(c);
+                        }
+                        break;
+                    default:
+                        output.append(c);
+                        break;
                 }
-                output.append(quoteChar);
-            } else {
-                // Last resort: add double quotes
-                output.append('"');
-                if (value != null) {
-                    output.append(value);
-                }
-                output.append('"');
             }
         }
+
+        output.append(quoteChar);
     }
 
     private void visitInfixExpression(InfixExpression expr, String operator) {
