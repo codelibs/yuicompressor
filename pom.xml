@@ -66,12 +66,12 @@
       <version>2.37</version>
     </dependency>
 
-    <!-- Mozilla Rhino JavaScript engine - using 1.7R5 for compatibility -->
-    <!-- Version 1.7R5 (2015) maintains older API structure -->
+    <!-- Mozilla Rhino JavaScript engine - upgraded to latest version -->
+    <!-- Version 1.8.0 (2024) with modern AST API -->
     <dependency>
       <groupId>org.mozilla</groupId>
       <artifactId>rhino</artifactId>
-      <version>1.7R5</version>
+      <version>1.8.0</version>
     </dependency>
 
     <!-- Test dependencies -->
