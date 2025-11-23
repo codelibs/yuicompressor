@@ -229,16 +229,34 @@ public class MungedCodeGenerator {
     }
 
     private void visitStringLiteral(StringLiteral str) {
-        // Explicitly preserve quotes and content
-        String value = str.getValue();
-        char quoteChar = str.getQuoteCharacter();
-        if (quoteChar == '"' || quoteChar == '\'') {
-            output.append(quoteChar);
-            output.append(value);
-            output.append(quoteChar);
+        // Use toSource() which includes quotes and proper escaping
+        String source = str.toSource();
+        if (source != null && !source.isEmpty()) {
+            output.append(source);
         } else {
-            // Fallback to toSource() if quote character is not set
-            output.append(str.toSource());
+            // Fallback: manually construct the string literal
+            String value = str.getValue();
+            char quoteChar = str.getQuoteCharacter();
+            if (quoteChar == '"' || quoteChar == '\'') {
+                output.append(quoteChar);
+                // Escape special characters in the value
+                if (value != null) {
+                    output.append(value.replace("\\", "\\\\")
+                                      .replace("\"", "\\\"")
+                                      .replace("'", "\\'")
+                                      .replace("\n", "\\n")
+                                      .replace("\r", "\\r")
+                                      .replace("\t", "\\t"));
+                }
+                output.append(quoteChar);
+            } else {
+                // Last resort: add double quotes
+                output.append('"');
+                if (value != null) {
+                    output.append(value);
+                }
+                output.append('"');
+            }
         }
     }
 
