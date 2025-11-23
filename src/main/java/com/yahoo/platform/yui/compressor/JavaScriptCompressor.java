@@ -150,6 +150,8 @@ public class JavaScriptCompressor {
     private final ErrorReporter errorReporter;
     private final CommentPreserver commentPreserver;
     private AstRoot ast;
+    private ScopeBuilder scopeBuilder;
+    private ScriptOrFnScope globalScope;
 
     public JavaScriptCompressor(Reader in, ErrorReporter reporter)
             throws IOException, EvaluatorException {
@@ -201,6 +203,11 @@ public class JavaScriptCompressor {
         Parser parser = new Parser(this.compilerEnv);
         try {
             this.ast = parser.parse(new java.io.StringReader(source), null, 1);
+
+            // Build scope tree for variable tracking and munging
+            this.scopeBuilder = new ScopeBuilder();
+            this.globalScope = this.scopeBuilder.buildScopeTree(this.ast);
+
         } catch (Exception e) {
             throw new EvaluatorException("Error parsing JavaScript: " + e.getMessage());
         }
@@ -251,13 +258,17 @@ public class JavaScriptCompressor {
             throws IOException {
 
         try {
-            // For now, just output the parsed AST
-            // This maintains the basic structure without optimization
             String compressed;
 
             if (this.ast != null) {
-                // Use Rhino's built-in toSource() for now
-                compressed = this.ast.toSource();
+                // Perform variable munging if requested
+                if (munge) {
+                    this.globalScope.munge();
+                }
+
+                // Generate code with munged variable names
+                MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge);
+                compressed = generator.generate(this.ast);
 
                 // Remove extra whitespace
                 compressed = compressed.replaceAll("\\s+", " ");
@@ -284,10 +295,12 @@ public class JavaScriptCompressor {
 
                 out.write(compressed);
 
-                // TODO: Implement munging and write munge map
-                // if (munge && mungemap != null) {
-                //     // Write variable mapping to mungemap
-                // }
+                // Write munge map if requested
+                if (munge && mungemap != null) {
+                    StringBuffer mapping = new StringBuffer();
+                    this.globalScope.getFullMapping(mapping, "");
+                    mungemap.write(mapping.toString());
+                }
             }
 
         } catch (Exception e) {
