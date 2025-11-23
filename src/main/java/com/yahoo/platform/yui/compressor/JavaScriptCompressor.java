@@ -177,10 +177,22 @@ public class JavaScriptCompressor {
         this.errorReporter = reporter;
         this.commentPreserver = new CommentPreserver();
 
-        // Setup compiler environment
+        // Read the source into a string buffer for comment scanning and parsing
+        StringBuilder sourceCode = new StringBuilder();
+        char[] buffer = new char[4096];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            sourceCode.append(buffer, 0, read);
+        }
+        String source = sourceCode.toString();
+
+        // Scan for special comments before parsing
+        scanForSpecialComments(source);
+
+        // Setup compiler environment - DON'T record comments to avoid them in toSource()
         this.compilerEnv = new CompilerEnvirons();
-        this.compilerEnv.setRecordingComments(true);
-        this.compilerEnv.setRecordingLocalJsDocComments(true);
+        this.compilerEnv.setRecordingComments(false);
+        this.compilerEnv.setRecordingLocalJsDocComments(false);
         this.compilerEnv.setLanguageVersion(Context.VERSION_ES6);
         this.compilerEnv.setGenerateDebugInfo(false);
         this.compilerEnv.setErrorReporter(reporter);
@@ -188,14 +200,37 @@ public class JavaScriptCompressor {
         // Parse the JavaScript
         Parser parser = new Parser(this.compilerEnv);
         try {
-            this.ast = parser.parse(in, null, 1);
-
-            // Analyze comments for preservation
-            Set<Comment> comments = this.ast.getComments();
-            this.commentPreserver.analyzeComments(comments);
-
+            this.ast = parser.parse(new java.io.StringReader(source), null, 1);
         } catch (Exception e) {
             throw new EvaluatorException("Error parsing JavaScript: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Scan source code for special comments that should be preserved
+     */
+    private void scanForSpecialComments(String source) {
+        // Pattern to match block comments: /* ... */
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("/\\*(!|@cc_on|@if|@elif|@else|@end|@set|@_)([\\s\\S]*?)\\*/");
+        java.util.regex.Matcher matcher = pattern.matcher(source);
+
+        while (matcher.find()) {
+            String commentContent = matcher.group(1) + matcher.group(2);
+            String fullComment = matcher.group(0);
+
+            // Determine comment type
+            CommentPreserver.CommentType type;
+            if (commentContent.startsWith("!")) {
+                type = CommentPreserver.CommentType.KEEP;
+                commentPreserver.addPreservedComment(
+                    new CommentPreserver.PreservedComment(matcher.start(), fullComment, type)
+                );
+            } else if (commentContent.startsWith("@")) {
+                type = CommentPreserver.CommentType.CONDITIONAL;
+                commentPreserver.addPreservedComment(
+                    new CommentPreserver.PreservedComment(matcher.start(), fullComment, type)
+                );
+            }
         }
     }
 

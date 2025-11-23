@@ -167,6 +167,15 @@ public class CommentPreserver {
     }
 
     /**
+     * Adds a preserved comment
+     *
+     * @param comment Comment to preserve
+     */
+    public void addPreservedComment(PreservedComment comment) {
+        preservedComments.add(comment);
+    }
+
+    /**
      * Inserts preserved comments back into the compressed output
      *
      * This method places comments at the beginning of the output since
