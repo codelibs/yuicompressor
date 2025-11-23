@@ -24,6 +24,128 @@ import java.util.*;
  */
 public class JavaScriptCompressor {
 
+    // Static fields for variable name munging (used by ScriptOrFnScope)
+    static final ArrayList ones;
+    static final ArrayList twos;
+    static final ArrayList threes;
+    static final Set builtin = new HashSet();
+    static final Map literals = new HashMap();
+    static final Set reserved = new HashSet();
+
+    static {
+        // Initialize short variable names for munging
+        // This list contains all the 3 characters or less built-in global
+        // symbols available in a browser.
+        builtin.add("NaN");
+        builtin.add("top");
+
+        ones = new ArrayList();
+        for (char c = 'a'; c <= 'z'; c++)
+            ones.add(Character.toString(c));
+        for (char c = 'A'; c <= 'Z'; c++)
+            ones.add(Character.toString(c));
+
+        twos = new ArrayList();
+        for (int i = 0; i < ones.size(); i++) {
+            String one = (String) ones.get(i);
+            for (char c = 'a'; c <= 'z'; c++)
+                twos.add(one + Character.toString(c));
+            for (char c = 'A'; c <= 'Z'; c++)
+                twos.add(one + Character.toString(c));
+            for (char c = '0'; c <= '9'; c++)
+                twos.add(one + Character.toString(c));
+        }
+
+        threes = new ArrayList();
+        for (int i = 0; i < twos.size(); i++) {
+            String two = (String) twos.get(i);
+            for (char c = 'a'; c <= 'z'; c++)
+                threes.add(two + Character.toString(c));
+            for (char c = 'A'; c <= 'Z'; c++)
+                threes.add(two + Character.toString(c));
+            for (char c = '0'; c <= '9'; c++)
+                threes.add(two + Character.toString(c));
+        }
+
+        // Remove two-letter JavaScript reserved words and built-in globals
+        twos.remove("as");
+        twos.remove("is");
+        twos.remove("do");
+        twos.remove("if");
+        twos.remove("in");
+        twos.removeAll(builtin);
+
+        // Remove three-letter JavaScript reserved words and built-in globals
+        threes.remove("for");
+        threes.remove("int");
+        threes.remove("new");
+        threes.remove("try");
+        threes.remove("use");
+        threes.remove("var");
+        threes.removeAll(builtin);
+
+        // Initialize reserved words set
+        reserved.add("abstract");
+        reserved.add("boolean");
+        reserved.add("break");
+        reserved.add("byte");
+        reserved.add("case");
+        reserved.add("catch");
+        reserved.add("char");
+        reserved.add("class");
+        reserved.add("const");
+        reserved.add("continue");
+        reserved.add("debugger");
+        reserved.add("default");
+        reserved.add("delete");
+        reserved.add("do");
+        reserved.add("double");
+        reserved.add("else");
+        reserved.add("enum");
+        reserved.add("export");
+        reserved.add("extends");
+        reserved.add("false");
+        reserved.add("final");
+        reserved.add("finally");
+        reserved.add("float");
+        reserved.add("for");
+        reserved.add("function");
+        reserved.add("goto");
+        reserved.add("if");
+        reserved.add("implements");
+        reserved.add("import");
+        reserved.add("in");
+        reserved.add("instanceof");
+        reserved.add("int");
+        reserved.add("interface");
+        reserved.add("long");
+        reserved.add("native");
+        reserved.add("new");
+        reserved.add("null");
+        reserved.add("package");
+        reserved.add("private");
+        reserved.add("protected");
+        reserved.add("public");
+        reserved.add("return");
+        reserved.add("short");
+        reserved.add("static");
+        reserved.add("super");
+        reserved.add("switch");
+        reserved.add("synchronized");
+        reserved.add("this");
+        reserved.add("throw");
+        reserved.add("throws");
+        reserved.add("transient");
+        reserved.add("true");
+        reserved.add("try");
+        reserved.add("typeof");
+        reserved.add("var");
+        reserved.add("void");
+        reserved.add("volatile");
+        reserved.add("while");
+        reserved.add("with");
+    }
+
     private final CompilerEnvirons compilerEnv;
     private final ErrorReporter errorReporter;
     private final CommentPreserver commentPreserver;
@@ -57,9 +179,20 @@ public class JavaScriptCompressor {
         }
     }
 
+    // 6-parameter version (for backward compatibility)
     public void compress(Writer out, int linebreakpos,
                         boolean munge, boolean verbose,
                         boolean preserveAllSemiColons, boolean disableOptimizations)
+            throws IOException {
+        compress(out, null, linebreakpos, munge, verbose,
+                preserveAllSemiColons, disableOptimizations, false);
+    }
+
+    // 8-parameter version (main implementation)
+    public void compress(Writer out, Writer mungemap, int linebreakpos,
+                        boolean munge, boolean verbose,
+                        boolean preserveAllSemiColons, boolean disableOptimizations,
+                        boolean preserveUnknownHints)
             throws IOException {
 
         try {
@@ -95,6 +228,11 @@ public class JavaScriptCompressor {
                 }
 
                 out.write(compressed);
+
+                // TODO: Implement munging and write munge map
+                // if (munge && mungemap != null) {
+                //     // Write variable mapping to mungemap
+                // }
             }
 
         } catch (Exception e) {
