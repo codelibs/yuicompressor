@@ -51,7 +51,12 @@ public class MungedCodeGenerator {
                 visitFunction((FunctionNode) node);
                 break;
             case Token.BLOCK:
-                visitBlock((Block) node);
+                // Both Block and Scope can have Token.BLOCK type
+                if (node instanceof Scope) {
+                    visitScope((Scope) node);
+                } else {
+                    visitBlock((Block) node);
+                }
                 break;
 
             // Variables and identifiers
@@ -76,7 +81,12 @@ public class MungedCodeGenerator {
                 visitIfStatement((IfStatement) node);
                 break;
             case Token.FOR:
-                visitForLoop((ForLoop) node);
+                // ForInLoop and ForLoop share the same token type, check ForInLoop first
+                if (node instanceof ForInLoop) {
+                    visitForInLoop((ForInLoop) node);
+                } else {
+                    visitForLoop((ForLoop) node);
+                }
                 break;
             case Token.WHILE:
                 visitWhileLoop((WhileLoop) node);
@@ -324,11 +334,6 @@ public class MungedCodeGenerator {
             // Parenthesized expression
             case Token.LP:
                 visitParenthesizedExpression((ParenthesizedExpression) node);
-                break;
-
-            // For-in and For-of loops
-            case 162: // Token.FOR_IN (may vary by Rhino version)
-                visitForInLoop((ForInLoop) node);
                 break;
 
             // Spread and yield
@@ -726,6 +731,19 @@ public class MungedCodeGenerator {
         output.append("}");
     }
 
+    private void visitScope(Scope scope) {
+        output.append("{");
+        for (Node child : scope) {
+            if (child instanceof AstNode) {
+                visitNode((AstNode) child);
+                if (needsSemicolon((AstNode) child)) {
+                    output.append(";");
+                }
+            }
+        }
+        output.append("}");
+    }
+
     private void visitStringLiteral(StringLiteral str) {
         String value = str.getValue();
         char quoteChar = str.getQuoteCharacter();
@@ -936,7 +954,7 @@ public class MungedCodeGenerator {
                 } else {
                     visitNode(left);
                 }
-            } else if (prop.isGetter()) {
+            } else if (prop.isGetterMethod()) {
                 output.append("get ");
                 visitNode(prop.getLeft());
                 AstNode right = prop.getRight();
@@ -947,7 +965,7 @@ public class MungedCodeGenerator {
                     output.append(")");
                     visitNode(fn.getBody());
                 }
-            } else if (prop.isSetter()) {
+            } else if (prop.isSetterMethod()) {
                 output.append("set ");
                 visitNode(prop.getLeft());
                 AstNode right = prop.getRight();

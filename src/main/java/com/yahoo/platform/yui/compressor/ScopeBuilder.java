@@ -179,7 +179,10 @@ public class ScopeBuilder {
             // Array destructuring pattern
             ArrayLiteral arr = (ArrayLiteral) param;
             for (AstNode element : arr.getElements()) {
-                declareParameterIdentifiers(element, scope);
+                // Skip null or empty elements (e.g., [a, , b])
+                if (element != null && !(element instanceof EmptyExpression)) {
+                    declareParameterIdentifiers(element, scope);
+                }
             }
         } else if (param instanceof ObjectLiteral) {
             // Object destructuring pattern
