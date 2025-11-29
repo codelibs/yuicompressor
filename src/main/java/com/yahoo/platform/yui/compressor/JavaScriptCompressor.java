@@ -73,6 +73,8 @@ public class JavaScriptCompressor {
         twos.remove("do");
         twos.remove("if");
         twos.remove("in");
+        // ES6+ two-letter keywords
+        twos.remove("of");
         twos.removeAll(builtin);
 
         // Remove three-letter JavaScript reserved words and built-in globals
@@ -82,6 +84,10 @@ public class JavaScriptCompressor {
         threes.remove("try");
         threes.remove("use");
         threes.remove("var");
+        // ES6+ three-letter keywords
+        threes.remove("let");
+        threes.remove("get");
+        threes.remove("set");
         threes.removeAll(builtin);
 
         // Initialize reserved words set
@@ -144,6 +150,17 @@ public class JavaScriptCompressor {
         reserved.add("volatile");
         reserved.add("while");
         reserved.add("with");
+        // ES6+ reserved words
+        reserved.add("let");
+        reserved.add("await");
+        reserved.add("yield");
+        reserved.add("of");
+        reserved.add("async");
+        reserved.add("from");
+        reserved.add("get");
+        reserved.add("set");
+        reserved.add("target");
+        reserved.add("meta");
     }
 
     // Pattern for matching special comments that should be preserved
@@ -199,7 +216,8 @@ public class JavaScriptCompressor {
         this.compilerEnv = new CompilerEnvirons();
         this.compilerEnv.setRecordingComments(false);
         this.compilerEnv.setRecordingLocalJsDocComments(false);
-        this.compilerEnv.setLanguageVersion(Context.VERSION_1_8);
+        // Use ES6 language version for better ES6+ syntax support
+        this.compilerEnv.setLanguageVersion(Context.VERSION_ES6);
         this.compilerEnv.setGenerateDebugInfo(false);
         this.compilerEnv.setErrorReporter(reporter);
 
