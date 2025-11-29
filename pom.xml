@@ -164,15 +164,24 @@
         </configuration>
       </plugin>
 
-      <!-- Javadoc plugin configuration -->
+      <!-- Javadoc plugin for Maven Central -->
       <plugin>
         <artifactId>maven-javadoc-plugin</artifactId>
         <version>3.11.2</version>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
         <configuration>
-          <source>8</source>
+          <source>11</source>
           <encoding>UTF-8</encoding>
           <docencoding>UTF-8</docencoding>
           <charset>UTF-8</charset>
+          <doclint>none</doclint>
         </configuration>
       </plugin>
 
