@@ -1,22 +1,51 @@
-build_tmp/
-node_modules
+# =========================
+# OS Generated Files
+# =========================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =========================
+# Editor/IDE
+# =========================
+# Vim
 .*.swp
-.svn
-CVS/
-.serena/
-# Ignore all backup files
+.*.swo
 *~
-# Ignore Emacs auto saved files
+
+# Emacs
 *#*#
-build/classes
-build/jar
-build/build_tmp
-build/yuicompressor*.jar
+*.elc
+.#*
+
+# VS Code
+.vscode/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse
 .project
 .classpath
+.settings/
+bin/
 
+# NetBeans
+nbproject/
+nbbuild/
+nbdist/
+
+# =========================
 # Maven
+# =========================
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -27,3 +56,35 @@ dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar
+
+# =========================
+# Ant (legacy build system)
+# =========================
+build/
+
+# =========================
+# Node.js
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# Legacy VCS
+# =========================
+.svn/
+CVS/
+
+# =========================
+# Serena MCP
+# =========================
+.serena/
+
+# =========================
+# Misc
+# =========================
+*.log
+*.tmp
+*.bak
+*.orig

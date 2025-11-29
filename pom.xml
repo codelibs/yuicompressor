@@ -18,38 +18,46 @@
     such as 'eval' or 'with' (although the compression is not optimal is those
     cases) Compared to jsmin, the average savings is around 20%.
   </description>
-  <url>https://github.com/yui/yuicompressor</url>
+  <url>https://github.com/codelibs/yuicompressor</url>
 
   <licenses>
     <license>
       <name>BSD License</name>
-      <url>http://developer.yahoo.com/yui/license.html</url>
+      <url>https://raw.githubusercontent.com/codelibs/yuicompressor/refs/heads/main/LICENSE</url>
       <distribution>repo</distribution>
     </license>
   </licenses>
 
-  <mailingLists>
-    <mailingList>
-      <name>yui-compressor-forum</name>
-      <archive>http://yuilibrary.com/forum/viewforum.php?f=94/</archive>
-    </mailingList>
-  </mailingLists>
-
   <scm>
-    <connection>scm:git:git://github.com/yui/yuicompressor.git</connection>
-    <url>https://github.com/yui/yuicompressor</url>
+    <connection>scm:git:git@github.com:codelibs/yuicompressor.git</connection>
+    <url>scm:git:git@github.com:codelibs/yuicompressor.git</url>
+    <developerConnection>scm:git:git@github.com:codelibs/yuicompressor.git</developerConnection>
+    <tag>HEAD</tag>
   </scm>
+
+  <organization>
+    <name>CodeLibs Project</name>
+    <url>https://www.codelibs.org/</url>
+  </organization>
 
   <developers>
     <developer>
-      <id>julienlecomte</id>
-      <name>Julien Lecomte</name>
-    </developer>
-    <developer>
-      <id>isaacs</id>
-      <name>Isaac Z. Schlueter</name>
+      <id>shinsuke</id>
+      <name>Shinsuke Sugaya</name>
+      <email>shinsuke.sugaya@codelibs.co</email>
+      <organization>CodeLibs Inc.</organization>
+      <organizationUrl>https://codelibs.co</organizationUrl>
     </developer>
   </developers>
+
+  <contributors>
+    <contributor>
+      <name>Julien Lecomte</name>
+    </contributor>
+    <contributor>
+      <name>Isaac Z. Schlueter</name>
+    </contributor>
+  </contributors>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -87,7 +95,6 @@
     <plugins>
       <!-- Compiler plugin for Java 11+ -->
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
@@ -102,7 +109,6 @@
 
       <!-- Surefire plugin for running tests -->
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>2.22.2</version>
         <configuration>
@@ -115,7 +121,6 @@
 
       <!-- Shade plugin to create fat JAR with dependencies -->
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.2.1</version>
         <executions>
@@ -148,7 +153,6 @@
 
       <!-- JAR plugin configuration -->
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
@@ -159,67 +163,45 @@
           </archive>
         </configuration>
       </plugin>
+
+      <!-- Javadoc plugin configuration -->
+      <plugin>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <configuration>
+          <source>8</source>
+          <encoding>UTF-8</encoding>
+          <docencoding>UTF-8</docencoding>
+          <charset>UTF-8</charset>
+        </configuration>
+      </plugin>
+
+      <!-- GPG plugin for signing artifacts -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Central Publishing Plugin -->
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.7.0</version>
+        <extensions>true</extensions>
+        <configuration>
+          <publishingServerId>central</publishingServerId>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
-
-  <!-- Profile for Maven Central deployment -->
-  <profiles>
-    <profile>
-      <id>release</id>
-      <build>
-        <plugins>
-          <!-- Source plugin for Maven Central -->
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-source-plugin</artifactId>
-            <version>3.2.0</version>
-            <executions>
-              <execution>
-                <id>attach-sources</id>
-                <goals>
-                  <goal>jar-no-fork</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-
-          <!-- Javadoc plugin for Maven Central -->
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-javadoc-plugin</artifactId>
-            <version>3.2.0</version>
-            <configuration>
-              <source>8</source>
-              <doclint>none</doclint>
-            </configuration>
-            <executions>
-              <execution>
-                <id>attach-javadocs</id>
-                <goals>
-                  <goal>jar</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-
-          <!-- GPG plugin for signing -->
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-gpg-plugin</artifactId>
-            <version>1.6</version>
-            <executions>
-              <execution>
-                <id>sign-artifacts</id>
-                <phase>verify</phase>
-                <goals>
-                  <goal>sign</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
-
 </project>
