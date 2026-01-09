@@ -100,4 +100,56 @@ public class CssCompressorTest {
         String result = output.toString();
         assertTrue("Should preserve media query", result.contains("@media"));
     }
+
+    @Test
+    public void testLinebreakPosition() throws Exception {
+        // Test that linebreaks are inserted after specified position
+        String input = "body { color: red; } div { margin: 0; }";
+
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, 10); // Request linebreaks after 10 chars
+
+        String result = output.toString();
+        assertTrue("Should contain linebreak", result.contains("\n"));
+    }
+
+    @Test
+    public void testLinebreakNotInsideString() throws Exception {
+        // Test that linebreaks are NOT inserted inside strings containing '}'
+        // This tests the fix for the TODO about moving linebreak insertion after token restoration
+        String input = "body { content: \"test}value\"; color: red; }";
+
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, 5); // Very small linebreak position to trigger insertion
+
+        String result = output.toString();
+        // The string "test}value" should remain intact
+        assertTrue("String with } should be preserved intact", result.contains("\"test}value\""));
+    }
+
+    @Test
+    public void testLinebreakWithEscapedQuotes() throws Exception {
+        // Test strings with escaped quotes
+        String input = "body { content: \"test\\\"}\"; } div { color: blue; }";
+
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, 10);
+
+        String result = output.toString();
+        // The string with escaped quote should be preserved
+        assertTrue("String with escaped quote should be preserved", result.contains("\"test\\\"}\""));
+    }
+
+    @Test
+    public void testLinebreakWithSingleQuoteString() throws Exception {
+        // Test single-quoted strings containing '}'
+        String input = "body { content: 'test}value'; } div { color: blue; }";
+
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, 5);
+
+        String result = output.toString();
+        // The single-quoted string should remain intact
+        assertTrue("Single-quoted string with } should be preserved", result.contains("'test}value'"));
+    }
 }
