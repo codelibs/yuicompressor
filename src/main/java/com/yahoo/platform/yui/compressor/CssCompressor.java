@@ -553,7 +553,8 @@ public class CssCompressor {
                 // Only insert linebreak at '}' if not inside a string
                 if (c == '}' && !inString && i - linestartpos > linebreakpos) {
                     sb.insert(i, '\n');
-                    linestartpos = i;
+                    i++; // Skip the newly inserted newline
+                    linestartpos = i; // New line starts after the newline character
                 }
             }
 
