@@ -489,26 +489,6 @@ public class CssCompressor {
         // Add "\" back to fix Opera -o-device-pixel-ratio query
         css = css.replaceAll("___YUI_QUERY_FRACTION___", "/");
 
-        // TODO: Should this be after we re-insert tokens. These could alter the break points. However then
-        // we'd need to make sure we don't break in the middle of a string etc.
-        if (linebreakpos >= 0) {
-            // Some source control tools don't like it when files containing lines longer
-            // than, say 8000 characters, are checked in. The linebreak option is used in
-            // that case to split long lines after a specific column.
-            i = 0;
-            int linestartpos = 0;
-            sb = new StringBuffer(css);
-            while (i < sb.length()) {
-                char c = sb.charAt(i++);
-                if (c == '}' && i - linestartpos > linebreakpos) {
-                    sb.insert(i, '\n');
-                    linestartpos = i;
-                }
-            }
-
-            css = sb.toString();
-        }
-
         // Replace multiple semi-colons in a row by a single one
         // See SF bug #1980989
         css = css.replaceAll(";;+", ";");
@@ -535,7 +515,51 @@ public class CssCompressor {
             m.appendReplacement(sb, s);
         }
         m.appendTail(sb);
-        css = sb.toString(); 
+        css = sb.toString();
+
+        // Insert linebreaks for source control tools that don't like long lines.
+        // This is done after token restoration so that line lengths are accurate.
+        // We track string state to avoid inserting linebreaks inside string literals.
+        if (linebreakpos >= 0) {
+            i = 0;
+            int linestartpos = 0;
+            sb = new StringBuffer(css);
+            boolean inString = false;
+            char stringChar = 0;
+
+            while (i < sb.length()) {
+                char c = sb.charAt(i);
+
+                // Track whether we're inside a string literal
+                if (!inString && (c == '"' || c == '\'')) {
+                    inString = true;
+                    stringChar = c;
+                } else if (inString && c == stringChar) {
+                    // Check for escaped quote (look back for odd number of backslashes)
+                    int backslashCount = 0;
+                    int j = i - 1;
+                    while (j >= 0 && sb.charAt(j) == '\\') {
+                        backslashCount++;
+                        j--;
+                    }
+                    if (backslashCount % 2 == 0) {
+                        // Not escaped, end of string
+                        inString = false;
+                    }
+                }
+
+                i++;
+
+                // Only insert linebreak at '}' if not inside a string
+                if (c == '}' && !inString && i - linestartpos > linebreakpos) {
+                    sb.insert(i, '\n');
+                    i++; // Skip the newly inserted newline
+                    linestartpos = i; // New line starts after the newline character
+                }
+            }
+
+            css = sb.toString();
+        }
 
         // Trim the final string (for any leading or trailing white spaces)
         css = css.trim();
