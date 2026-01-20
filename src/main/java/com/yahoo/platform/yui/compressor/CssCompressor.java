@@ -14,6 +14,9 @@ package com.yahoo.platform.yui.compressor;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.ArrayList;
@@ -497,7 +500,18 @@ public class CssCompressor {
         for(i = 0, max = preservedTokens.size(); i < max; i++) {
             css = css.replace("___YUICSSMIN_PRESERVED_TOKEN_" + i + "___", preservedTokens.get(i).toString());
         }
-        
+
+        Pattern variablePattern = Pattern.compile("var\\((--[A-Za-z_][A-Za-z0-9_-]*)\\)");
+        Map<String, String> preserevedVariables = new TreeMap<>();
+        Matcher matcher = variablePattern.matcher(css);
+        int variableIndex = 0;
+        final String preservedVariable = "___YUICSSMIN_PRESERVED_VARIABLE_";
+        while (matcher.find()) {
+            String variableName = matcher.group(1);
+            String key = preservedVariable + variableIndex++;
+            preserevedVariables.put(key, variableName);
+            css = css.replace(matcher.group(1), key);
+        }
         // Add spaces back in between operators for css calc function
         // https://developer.mozilla.org/en-US/docs/Web/CSS/calc
         // Added by Eric Arnol-Martin (earnolmartin@gmail.com)
@@ -516,6 +530,11 @@ public class CssCompressor {
         }
         m.appendTail(sb);
         css = sb.toString();
+
+        // Restore preserved CSS variables
+        for (Map.Entry<String, String> entry : preserevedVariables.entrySet()) {
+            css = css.replace(entry.getKey(), entry.getValue());
+        }
 
         // Insert linebreaks for source control tools that don't like long lines.
         // This is done after token restoration so that line lengths are accurate.
