@@ -76,15 +76,18 @@ class JsOutputSyntaxTest {
             return;
         }
 
-        StringWriter out = new StringWriter();
+        JavaScriptCompressor compressor;
         try {
-            new JavaScriptCompressor(new StringReader(source), SILENT)
-                    .compress(out, -1, true, false, false, false);
-        } catch (Exception parseFailure) {
-            // Input the compressor cannot parse is a separate concern; this test
-            // only asserts that whatever it does emit is valid JavaScript.
+            compressor = new JavaScriptCompressor(new StringReader(source), SILENT);
+        } catch (EvaluatorException parseFailure) {
+            // Input the compressor cannot parse is a separate concern; this test only
+            // asserts that whatever it does emit is valid JavaScript. A failure during
+            // code generation is NOT excused here — it must fail the test.
             return;
         }
+
+        StringWriter out = new StringWriter();
+        compressor.compress(out, -1, true, false, false, false);
 
         String report = nodeCheck(out.toString());
         assertEquals("", report, "node rejected the compressed output of " + fixture);
