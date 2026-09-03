@@ -152,4 +152,38 @@ public class CssCompressorTest {
         // The single-quoted string should remain intact
         assertTrue("Single-quoted string with } should be preserved", result.contains("'test}value'"));
     }
+
+    @Test
+    public void testVariable() throws Exception {
+        String input = "body { --test-value: red; \n color: var(--test-value);}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        String result = output.toString();
+        assertTrue("Should preserve variable", result.contains("body{--test-value:red;color:var(--test-value)}"));
+    }
+
+    @Test
+    public void testVariableInCalc() throws Exception {
+        String input = "body { --test-value: 10px; \n grid-template-columns: calc(50% - (0.5 * var(--test-value))) 1fr';}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        String result = output.toString();
+        assertEquals("Should preserve variable", "body{--test-value:10px;grid-template-columns:calc(50% - (0.5 * var(--test-value))) 1fr'}", result);
+    }
+
+    @Test
+    public void testVariablesNotRenamedAfterTenVarOccurrences() throws Exception {
+        String input = ".a{c0:var(--alpha);c1:var(--bravo);c2:var(--charlie);c3:var(--delta);c4:var(--echo);c5:var(--foxtrot);c6:var(--golf);c7:var(--hotel);c8:var(--india);c9:var(--juliett);c10:var(--kilo)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("Custom properties should not be renamed", input, output.toString());
+    }
+
+    @Test
+    public void testVariableInCalcWithFallbackValue() throws Exception {
+        String input = "body{grid-template-columns:calc(50%-(0.5*var(--x,10px))) 1fr}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("Should preserve var() with fallback in calc()", "body{grid-template-columns:calc(50% - (0.5 * var(--x,10px))) 1fr}", output.toString());
+    }
 }
