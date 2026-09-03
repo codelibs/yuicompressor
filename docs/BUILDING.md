@@ -127,4 +127,4 @@ Install Maven or use the Maven wrapper if available.
 
 ## Continuous Integration
 
-The project includes a `.travis.yml` configuration for Travis CI. You can adapt this for other CI systems like GitHub Actions, Jenkins, or GitLab CI.
+The project uses GitHub Actions for continuous integration, configured in `.github/workflows/maven.yml`. Builds and tests run on Java 11, 17, and 21.

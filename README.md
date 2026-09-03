@@ -141,11 +141,6 @@ This project has been migrated from Ant to Maven. The following changes have bee
 
 For contributors familiar with the old structure, please refer to the documentation in `docs/` for the new organization.
 
-Build Status
-------------
-
-[![Build Status](https://secure.travis-ci.org/yui/yuicompressor.svg?branch=master)](http://travis-ci.org/yui/yuicompressor)
-
 
 Global Options
 --------------
