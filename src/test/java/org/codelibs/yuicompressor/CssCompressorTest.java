@@ -164,11 +164,11 @@ public class CssCompressorTest {
 
     @Test
     public void testVariableInCalc() throws Exception {
-        String input = "body { --test-value: 10px; \n grid-template-columns: calc(50% - (0.5 * var(--test-value))) 1fr';}";
+        String input = "body { --test-value: 10px; \n grid-template-columns: calc(50% - (0.5 * var(--test-value))) 1fr;}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
         String result = output.toString();
-        assertEquals("Should preserve variable", "body{--test-value:10px;grid-template-columns:calc(50% - (0.5 * var(--test-value))) 1fr'}", result);
+        assertEquals("Should preserve variable", "body{--test-value:10px;grid-template-columns:calc(50% - (0.5 * var(--test-value))) 1fr}", result);
     }
 
     @Test
@@ -185,5 +185,68 @@ public class CssCompressorTest {
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
         assertEquals("Should preserve var() with fallback in calc()", "body{grid-template-columns:calc(50% - (0.5 * var(--x,10px))) 1fr}", output.toString());
+    }
+
+    @Test
+    public void testCalcWithNestedFunctionKeepsIdentifierIntact() throws Exception {
+        String input = "a{width:calc(env(safe-area-inset-top) + 10px)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("Identifier inside a nested function must not be split",
+                "a{width:calc(env(safe-area-inset-top) + 10px)}", output.toString());
+    }
+
+    @Test
+    public void testCalcWithNestedParenthesesRespacesWholeExpression() throws Exception {
+        String input = "a{width:calc((100%-30px)/3)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("Respacing must continue past the first closing parenthesis",
+                "a{width:calc((100% - 30px) / 3)}", output.toString());
+    }
+
+    @Test
+    public void testCalcKeepsCustomPropertyNameContainingDigit() throws Exception {
+        String input = "a{width:calc(100%-var(--x1-y))}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("A digit inside a custom property name must not make the next hyphen an operator",
+                "a{width:calc(100% - var(--x1-y))}", output.toString());
+    }
+
+    @Test
+    public void testCalcRespacesOperatorAfterClosingParenthesis() throws Exception {
+        String input = "a{width:calc(var(--gap)*2)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("A closing parenthesis ends an operand",
+                "a{width:calc(var(--gap) * 2)}", output.toString());
+    }
+
+    @Test
+    public void testCalcRespacesOperatorBetweenTwoFunctions() throws Exception {
+        String input = "a{width:calc(var(--a)-var(--b))}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("calc() requires whitespace around a subtraction between two functions",
+                "a{width:calc(var(--a) - var(--b))}", output.toString());
+    }
+
+    @Test
+    public void testCalcRespacesNestedCalc() throws Exception {
+        String input = "a{width:calc(calc(1px+2px)*3)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("Operators outside a nested calc() must be respaced too",
+                "a{width:calc(calc(1px + 2px) * 3)}", output.toString());
+    }
+
+    @Test
+    public void testCalcKeepsUnaryMinusUnspaced() throws Exception {
+        String input = "a{width:calc(100px - -5px)}";
+        CssCompressor compressor = new CssCompressor(new StringReader(input));
+        compressor.compress(output, -1);
+        assertEquals("A unary sign must not be treated as an operator",
+                "a{width:calc(100px - -5px)}", output.toString());
     }
 }
