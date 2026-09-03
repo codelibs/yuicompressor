@@ -1,11 +1,11 @@
 package org.codelibs.yuicompressor;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import com.yahoo.platform.yui.compressor.JavaScriptCompressor;
 import com.yahoo.platform.yui.compressor.CssCompressor;
@@ -26,8 +26,8 @@ public class YUICompressorTest {
         compressor.compress(output, -1, false, false, false, false);
         
         String result = output.toString();
-        assertTrue("Should compress JavaScript", result.length() > 0);
-        assertTrue("Should contain var", result.contains("var"));
+        assertTrue(result.length() > 0, "Should compress JavaScript");
+        assertTrue(result.contains("var"), "Should contain var");
     }
 
     @Test
@@ -39,8 +39,8 @@ public class YUICompressorTest {
         compressor.compress(output, -1);
         
         String result = output.toString();
-        assertTrue("Should compress CSS", result.length() > 0);
-        assertTrue("Should contain body", result.contains("body"));
+        assertTrue(result.length() > 0, "Should compress CSS");
+        assertTrue(result.contains("body"), "Should contain body");
     }
 
     @Test
@@ -53,7 +53,7 @@ public class YUICompressorTest {
         compressor.compress(output, -1, false, false, false, false);
         
         String result = output.toString();
-        assertTrue("Should preserve variable names with nomunge", result.contains("myVariable"));
+        assertTrue(result.contains("myVariable"), "Should preserve variable names with nomunge");
     }
 
     @Test
@@ -66,6 +66,6 @@ public class YUICompressorTest {
         compressor.compress(output, -1, true, false, false, false);
         
         String result = output.toString();
-        assertFalse("Should obfuscate variable names with munge", result.contains("myVariable"));
+        assertFalse(result.contains("myVariable"), "Should obfuscate variable names with munge");
     }
 }

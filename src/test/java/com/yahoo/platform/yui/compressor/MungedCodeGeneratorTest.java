@@ -1,10 +1,10 @@
 package com.yahoo.platform.yui.compressor;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mozilla.javascript.CompilerEnvirons;
 import org.mozilla.javascript.Parser;
 import org.mozilla.javascript.ast.AstRoot;
@@ -32,8 +32,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain var declaration", result.contains("var"));
-        assertTrue("Should contain variable x", result.contains("x"));
+        assertTrue(result.contains("var"), "Should contain var declaration");
+        assertTrue(result.contains("x"), "Should contain variable x");
     }
 
     @Test
@@ -47,8 +47,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain function keyword", result.contains("function"));
-        assertTrue("Should contain function name", result.contains("test"));
+        assertTrue(result.contains("function"), "Should contain function keyword");
+        assertTrue(result.contains("test"), "Should contain function name");
     }
 
     @Test
@@ -62,9 +62,9 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain function", result.contains("function"));
-        assertTrue("Should contain parameters", result.contains("a") && result.contains("b"));
-        assertTrue("Should contain return statement", result.contains("return"));
+        assertTrue(result.contains("function"), "Should contain function");
+        assertTrue(result.contains("a") && result.contains("b"), "Should contain parameters");
+        assertTrue(result.contains("return"), "Should contain return statement");
     }
 
     @Test
@@ -78,8 +78,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain return statement", result.contains("return"));
-        assertTrue("Should contain return value", result.contains("42"));
+        assertTrue(result.contains("return"), "Should contain return statement");
+        assertTrue(result.contains("42"), "Should contain return value");
     }
 
     @Test
@@ -93,7 +93,7 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should preserve string literal", result.contains("\"hello\""));
+        assertTrue(result.contains("\"hello\""), "Should preserve string literal");
     }
 
     @Test
@@ -107,7 +107,7 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain number", result.contains("123.45"));
+        assertTrue(result.contains("123.45"), "Should contain number");
     }
 
     @Test
@@ -121,8 +121,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain addition", result.contains("+"));
-        assertTrue("Should contain multiplication", result.contains("*"));
+        assertTrue(result.contains("+"), "Should contain addition");
+        assertTrue(result.contains("*"), "Should contain multiplication");
     }
 
     @Test
@@ -136,8 +136,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain function name", result.contains("test"));
-        assertTrue("Should contain parentheses", result.contains("(") && result.contains(")"));
+        assertTrue(result.contains("test"), "Should contain function name");
+        assertTrue(result.contains("(") && result.contains(")"), "Should contain parentheses");
     }
 
     @Test
@@ -151,9 +151,9 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain object name", result.contains("obj"));
-        assertTrue("Should contain dot", result.contains("."));
-        assertTrue("Should contain property name", result.contains("property"));
+        assertTrue(result.contains("obj"), "Should contain object name");
+        assertTrue(result.contains("."), "Should contain dot");
+        assertTrue(result.contains("property"), "Should contain property name");
     }
 
     @Test
@@ -167,8 +167,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain object braces", result.contains("{") && result.contains("}"));
-        assertTrue("Should contain properties", result.contains("a") && result.contains("b"));
+        assertTrue(result.contains("{") && result.contains("}"), "Should contain object braces");
+        assertTrue(result.contains("a") && result.contains("b"), "Should contain properties");
     }
 
     @Test
@@ -182,7 +182,7 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain array brackets", result.contains("[") && result.contains("]"));
+        assertTrue(result.contains("[") && result.contains("]"), "Should contain array brackets");
     }
 
     @Test
@@ -196,7 +196,7 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain block braces", result.contains("{") && result.contains("}"));
+        assertTrue(result.contains("{") && result.contains("}"), "Should contain block braces");
     }
 
     @Test
@@ -214,11 +214,11 @@ public class MungedCodeGeneratorTest {
         String result = generator.generate(ast);
 
         // Function name should be preserved
-        assertTrue("Function name should be preserved", result.contains("test"));
+        assertTrue(result.contains("test"), "Function name should be preserved");
 
         // Local variable should be munged (won't be 'localVar')
         // The exact munged name depends on the munging algorithm
-        assertTrue("Should contain function", result.contains("function"));
+        assertTrue(result.contains("function"), "Should contain function");
     }
 
     @Test
@@ -233,7 +233,7 @@ public class MungedCodeGeneratorTest {
         String result = generator.generate(ast);
 
         // Variable names should be preserved when munging is disabled
-        assertTrue("Variable name should be preserved", result.contains("localVar"));
+        assertTrue(result.contains("localVar"), "Variable name should be preserved");
     }
 
     @Test
@@ -247,8 +247,8 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain all variables",
-            result.contains("a") && result.contains("b") && result.contains("c"));
+        assertTrue(result.contains("a") && result.contains("b") && result.contains("c"),
+            "Should contain all variables");
     }
 
     @Test
@@ -262,7 +262,7 @@ public class MungedCodeGeneratorTest {
         MungedCodeGenerator generator = new MungedCodeGenerator(builder, false);
         String result = generator.generate(ast);
 
-        assertTrue("Should contain let", result.contains("let"));
-        assertTrue("Should contain const", result.contains("const"));
+        assertTrue(result.contains("let"), "Should contain let");
+        assertTrue(result.contains("const"), "Should contain const");
     }
 }

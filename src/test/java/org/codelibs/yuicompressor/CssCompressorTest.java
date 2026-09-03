@@ -1,12 +1,12 @@
 package org.codelibs.yuicompressor;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import com.yahoo.platform.yui.compressor.CssCompressor;
 
@@ -17,7 +17,7 @@ public class CssCompressorTest {
 
     private StringWriter output;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         output = new StringWriter();
     }
@@ -52,8 +52,8 @@ public class CssCompressorTest {
         compressor.compress(output, -1);
 
         String result = output.toString();
-        assertFalse("Comments should be removed", result.contains("Comment"));
-        assertTrue("Rules should be preserved", result.contains("body{color:red}"));
+        assertFalse(result.contains("Comment"), "Comments should be removed");
+        assertTrue(result.contains("body{color:red}"), "Rules should be preserved");
     }
 
     @Test
@@ -64,8 +64,8 @@ public class CssCompressorTest {
         compressor.compress(output, -1);
 
         String result = output.toString();
-        assertTrue("Should contain margin", result.contains("margin"));
-        assertTrue("Should contain padding", result.contains("padding"));
+        assertTrue(result.contains("margin"), "Should contain margin");
+        assertTrue(result.contains("padding"), "Should contain padding");
     }
 
     @Test
@@ -76,7 +76,7 @@ public class CssCompressorTest {
         compressor.compress(output, -1);
 
         String result = output.toString();
-        assertTrue("Should preserve selectors", result.contains("h1") && result.contains("h2") && result.contains("h3"));
+        assertTrue(result.contains("h1") && result.contains("h2") && result.contains("h3"), "Should preserve selectors");
     }
 
     @Test
@@ -87,7 +87,7 @@ public class CssCompressorTest {
         compressor.compress(output, -1);
 
         String result = output.toString();
-        assertTrue("Should preserve pseudo-class", result.contains(":hover"));
+        assertTrue(result.contains(":hover"), "Should preserve pseudo-class");
     }
 
     @Test
@@ -98,7 +98,7 @@ public class CssCompressorTest {
         compressor.compress(output, -1);
 
         String result = output.toString();
-        assertTrue("Should preserve media query", result.contains("@media"));
+        assertTrue(result.contains("@media"), "Should preserve media query");
     }
 
     @Test
@@ -110,7 +110,7 @@ public class CssCompressorTest {
         compressor.compress(output, 10); // Request linebreaks after 10 chars
 
         String result = output.toString();
-        assertTrue("Should contain linebreak", result.contains("\n"));
+        assertTrue(result.contains("\n"), "Should contain linebreak");
     }
 
     @Test
@@ -124,7 +124,7 @@ public class CssCompressorTest {
 
         String result = output.toString();
         // The string "test}value" should remain intact
-        assertTrue("String with } should be preserved intact", result.contains("\"test}value\""));
+        assertTrue(result.contains("\"test}value\""), "String with } should be preserved intact");
     }
 
     @Test
@@ -137,7 +137,7 @@ public class CssCompressorTest {
 
         String result = output.toString();
         // The string with escaped quote should be preserved
-        assertTrue("String with escaped quote should be preserved", result.contains("\"test\\\"}\""));
+        assertTrue(result.contains("\"test\\\"}\""), "String with escaped quote should be preserved");
     }
 
     @Test
@@ -150,7 +150,7 @@ public class CssCompressorTest {
 
         String result = output.toString();
         // The single-quoted string should remain intact
-        assertTrue("Single-quoted string with } should be preserved", result.contains("'test}value'"));
+        assertTrue(result.contains("'test}value'"), "Single-quoted string with } should be preserved");
     }
 
     @Test
@@ -159,7 +159,7 @@ public class CssCompressorTest {
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
         String result = output.toString();
-        assertTrue("Should preserve variable", result.contains("body{--test-value:red;color:var(--test-value)}"));
+        assertTrue(result.contains("body{--test-value:red;color:var(--test-value)}"), "Should preserve variable");
     }
 
     @Test
@@ -168,7 +168,7 @@ public class CssCompressorTest {
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
         String result = output.toString();
-        assertEquals("Should preserve variable", "body{--test-value:10px;grid-template-columns:calc(50% - (0.5 * var(--test-value))) 1fr}", result);
+        assertEquals("body{--test-value:10px;grid-template-columns:calc(50% - (0.5 * var(--test-value))) 1fr}", result, "Should preserve variable");
     }
 
     @Test
@@ -176,7 +176,7 @@ public class CssCompressorTest {
         String input = ".a{c0:var(--alpha);c1:var(--bravo);c2:var(--charlie);c3:var(--delta);c4:var(--echo);c5:var(--foxtrot);c6:var(--golf);c7:var(--hotel);c8:var(--india);c9:var(--juliett);c10:var(--kilo)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("Custom properties should not be renamed", input, output.toString());
+        assertEquals(input, output.toString(), "Custom properties should not be renamed");
     }
 
     @Test
@@ -184,7 +184,7 @@ public class CssCompressorTest {
         String input = "body{grid-template-columns:calc(50%-(0.5*var(--x,10px))) 1fr}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("Should preserve var() with fallback in calc()", "body{grid-template-columns:calc(50% - (0.5 * var(--x,10px))) 1fr}", output.toString());
+        assertEquals("body{grid-template-columns:calc(50% - (0.5 * var(--x,10px))) 1fr}", output.toString(), "Should preserve var() with fallback in calc()");
     }
 
     @Test
@@ -192,8 +192,8 @@ public class CssCompressorTest {
         String input = "a{width:calc(env(safe-area-inset-top) + 10px)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("Identifier inside a nested function must not be split",
-                "a{width:calc(env(safe-area-inset-top) + 10px)}", output.toString());
+        assertEquals("a{width:calc(env(safe-area-inset-top) + 10px)}", output.toString(),
+                "Identifier inside a nested function must not be split");
     }
 
     @Test
@@ -201,8 +201,8 @@ public class CssCompressorTest {
         String input = "a{width:calc((100%-30px)/3)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("Respacing must continue past the first closing parenthesis",
-                "a{width:calc((100% - 30px) / 3)}", output.toString());
+        assertEquals("a{width:calc((100% - 30px) / 3)}", output.toString(),
+                "Respacing must continue past the first closing parenthesis");
     }
 
     @Test
@@ -210,8 +210,8 @@ public class CssCompressorTest {
         String input = "a{width:calc(100%-var(--x1-y))}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("A digit inside a custom property name must not make the next hyphen an operator",
-                "a{width:calc(100% - var(--x1-y))}", output.toString());
+        assertEquals("a{width:calc(100% - var(--x1-y))}", output.toString(),
+                "A digit inside a custom property name must not make the next hyphen an operator");
     }
 
     @Test
@@ -219,8 +219,8 @@ public class CssCompressorTest {
         String input = "a{width:calc(var(--gap)*2)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("A closing parenthesis ends an operand",
-                "a{width:calc(var(--gap) * 2)}", output.toString());
+        assertEquals("a{width:calc(var(--gap) * 2)}", output.toString(),
+                "A closing parenthesis ends an operand");
     }
 
     @Test
@@ -228,8 +228,8 @@ public class CssCompressorTest {
         String input = "a{width:calc(var(--a)-var(--b))}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("calc() requires whitespace around a subtraction between two functions",
-                "a{width:calc(var(--a) - var(--b))}", output.toString());
+        assertEquals("a{width:calc(var(--a) - var(--b))}", output.toString(),
+                "calc() requires whitespace around a subtraction between two functions");
     }
 
     @Test
@@ -237,8 +237,8 @@ public class CssCompressorTest {
         String input = "a{width:calc(calc(1px+2px)*3)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("Operators outside a nested calc() must be respaced too",
-                "a{width:calc(calc(1px + 2px) * 3)}", output.toString());
+        assertEquals("a{width:calc(calc(1px + 2px) * 3)}", output.toString(),
+                "Operators outside a nested calc() must be respaced too");
     }
 
     @Test
@@ -246,7 +246,7 @@ public class CssCompressorTest {
         String input = "a{width:calc(100px - -5px)}";
         CssCompressor compressor = new CssCompressor(new StringReader(input));
         compressor.compress(output, -1);
-        assertEquals("A unary sign must not be treated as an operator",
-                "a{width:calc(100px - -5px)}", output.toString());
+        assertEquals("a{width:calc(100px - -5px)}", output.toString(),
+                "A unary sign must not be treated as an operator");
     }
 }
