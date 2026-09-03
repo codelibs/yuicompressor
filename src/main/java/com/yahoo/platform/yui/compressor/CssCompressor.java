@@ -237,7 +237,7 @@ public class CssCompressor {
         m.appendTail(sb);
         css = sb.toString();
         // Remove spaces before the things that should not have spaces before them.
-        css = css.replaceAll("\\s+([!{};:>+\\(\\)\\],])", "$1");
+        css = css.replaceAll("\\s+([!{};:>+\\)\\],])", "$1");
         // Restore spaces for !important
         css = css.replaceAll("!important", " !important");
         // bring back the colon
@@ -318,9 +318,21 @@ public class CssCompressor {
         m.appendTail(sb);
         css = sb.toString();
 
-        // Put the space back in some cases, to support stuff like
-        // @media screen and (-webkit-min-device-pixel-ratio:0){
-        css = css.replaceAll("(?i)\\band\\(", "and (");
+        // Normalize the casing of media/supports query keywords, to support stuff like
+        // @media screen AND (-webkit-min-device-pixel-ratio:0){
+        // $1 would echo the input's casing verbatim, so lowercase it explicitly.
+        Pattern keywordPattern = Pattern.compile("(?i)\\b(and|or|not)(\\s*\\()");
+        Matcher keywordMatcher = keywordPattern.matcher(css);
+        StringBuffer keywordSb = new StringBuffer();
+        while (keywordMatcher.find()) {
+            // Normalise the keyword's case only. Whitespace is deliberately left
+            // exactly as it was: inserting a space here would turn the ident in
+            // ":not(...)" into a separate token and break the selector.
+            keywordMatcher.appendReplacement(keywordSb,
+                    Matcher.quoteReplacement(keywordMatcher.group(1).toLowerCase() + keywordMatcher.group(2)));
+        }
+        keywordMatcher.appendTail(keywordSb);
+        css = keywordSb.toString();
 
         // Remove the spaces after the things that should not have spaces after them.
         css = css.replaceAll("([!{}:;>+\\(\\[,])\\s+", "$1");
