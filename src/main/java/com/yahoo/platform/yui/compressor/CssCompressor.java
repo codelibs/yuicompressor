@@ -501,22 +501,7 @@ public class CssCompressor {
         // Add spaces back in between operators for css calc function
         // https://developer.mozilla.org/en-US/docs/Web/CSS/calc
         // Added by Eric Arnol-Martin (earnolmartin@gmail.com)
-        sb = new StringBuffer();
-        p = Pattern.compile("calc\\([^\\)]*\\)");
-        m = p.matcher(css);
-        while (m.find()) {
-            String s = m.group();
-            
-            s = s.replaceAll("(?<=[-|%|px|em|rem|vw|\\d]+)\\+", " + ");
-            s = s.replaceAll("(?<=[|%|px|em|rem|vw|\\d])(?<!-)\\-(?!-)", " - ");
-            s = s.replaceAll("(?<=[-|%|px|em|rem|vw|\\d]+)\\*", " * ");
-            s = s.replaceAll("(?<=[-|%|px|em|rem|vw|\\d]+)\\/", " / ");
-            
-            m.appendReplacement(sb, s);
-        }
-        m.appendTail(sb);
-        css = sb.toString();
-
+        css = respaceCalcOperators(css);
 
         // Insert linebreaks for source control tools that don't like long lines.
         // This is done after token restoration so that line lengths are accurate.
@@ -567,5 +552,181 @@ public class CssCompressor {
 
         // Write the output...
         out.write(css);
+    }
+
+    /**
+     * Restores the whitespace that calc() requires around its operators.
+     *
+     * The passes above strip the spaces around '+', '-', '*' and '/', but calc() only accepts
+     * '+' and '-' when they are surrounded by whitespace. Putting them back cannot be done with
+     * a lookbehind on the previous character, because a hyphen or a letter is just as likely to
+     * belong to an identifier -- a custom property such as --x1-y, or a nested argument such as
+     * env(safe-area-inset-top) -- as it is to end an operand. So each expression is walked once,
+     * consuming whole numbers and whole identifiers, and an operator is only respaced when the
+     * token before it actually ends an operand.
+     */
+    private static String respaceCalcOperators(String css) {
+        StringBuffer sb = new StringBuffer(css.length());
+        int pos = 0;
+        while (pos < css.length()) {
+            int start = css.indexOf("calc(", pos);
+            if (start < 0) {
+                sb.append(css, pos, css.length());
+                break;
+            }
+            int open = start + "calc(".length() - 1;
+            int close = findMatchingParen(css, open);
+            if (close < 0) {
+                // Unbalanced - leave it alone and keep looking after the "calc(".
+                sb.append(css, pos, open + 1);
+                pos = open + 1;
+                continue;
+            }
+            sb.append(css, pos, open + 1);
+            respaceExpression(css, open + 1, close, sb);
+            sb.append(')');
+            pos = close + 1;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Returns the index of the ')' matching the '(' at openPos, or -1 if there is none.
+     */
+    private static int findMatchingParen(String css, int openPos) {
+        int depth = 0;
+        for (int i = openPos; i < css.length(); i++) {
+            char c = css.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Appends css[from, to) to sb, surrounding every binary operator with a single space.
+     */
+    private static void respaceExpression(String css, int from, int to, StringBuffer sb) {
+        int floor = sb.length();
+        boolean operandEnd = false;
+        int i = from;
+        while (i < to) {
+            char c = css.charAt(i);
+            if (operandEnd && isCalcOperator(c)) {
+                while (sb.length() > floor && isCssSpace(sb.charAt(sb.length() - 1))) {
+                    sb.setLength(sb.length() - 1);
+                }
+                sb.append(' ').append(c).append(' ');
+                i++;
+                while (i < to && isCssSpace(css.charAt(i))) {
+                    i++;
+                }
+                operandEnd = false;
+            } else if (isCssSpace(c)) {
+                // Whitespace separates tokens but does not end an operand.
+                sb.append(c);
+                i++;
+            } else if (startsNumber(css, i, to)) {
+                i = appendNumber(css, i, to, sb);
+                operandEnd = true;
+            } else if (startsIdentifier(css.charAt(i))) {
+                i = appendIdentifier(css, i, to, sb);
+                operandEnd = true;
+            } else {
+                sb.append(c);
+                operandEnd = (c == ')');
+                i++;
+            }
+        }
+    }
+
+    private static boolean isCalcOperator(char c) {
+        return c == '+' || c == '-' || c == '*' || c == '/';
+    }
+
+    private static boolean isCssSpace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+    }
+
+    private static boolean isDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    private static boolean isLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    /**
+     * A number may carry a sign here: an operator in that position was already respaced above,
+     * so a '+' or '-' still seen in front of a digit is a unary sign.
+     */
+    private static boolean startsNumber(String css, int i, int to) {
+        char c = css.charAt(i);
+        if (isDigit(c)) {
+            return true;
+        }
+        if (c == '.') {
+            return i + 1 < to && isDigit(css.charAt(i + 1));
+        }
+        if (c == '+' || c == '-') {
+            if (i + 1 >= to) {
+                return false;
+            }
+            char next = css.charAt(i + 1);
+            return isDigit(next) || (next == '.' && i + 2 < to && isDigit(css.charAt(i + 2)));
+        }
+        return false;
+    }
+
+    /**
+     * Consumes a number and the unit that follows it. The unit is taken as letters only, so that
+     * "100px-30px" splits into two dimensions rather than one with the unit "px-30px" -- which is
+     * what the CSS tokenizer would do, and the reason calc() demands the spaces in the first place.
+     */
+    private static int appendNumber(String css, int i, int to, StringBuffer sb) {
+        char c = css.charAt(i);
+        if (c == '+' || c == '-') {
+            sb.append(c);
+            i++;
+        }
+        while (i < to && (isDigit(css.charAt(i)) || css.charAt(i) == '.')) {
+            sb.append(css.charAt(i));
+            i++;
+        }
+        if (i < to && css.charAt(i) == '%') {
+            sb.append('%');
+            return i + 1;
+        }
+        while (i < to && isLetter(css.charAt(i))) {
+            sb.append(css.charAt(i));
+            i++;
+        }
+        return i;
+    }
+
+    private static boolean startsIdentifier(char c) {
+        return isIdentifierChar(c) && !isDigit(c);
+    }
+
+    /**
+     * Consumes a whole identifier, hyphens and digits included, so that names such as
+     * --x1-y or safe-area-inset-top are never split apart.
+     */
+    private static int appendIdentifier(String css, int i, int to, StringBuffer sb) {
+        while (i < to && isIdentifierChar(css.charAt(i))) {
+            sb.append(css.charAt(i));
+            i++;
+        }
+        return i;
+    }
+
+    private static boolean isIdentifierChar(char c) {
+        return isLetter(c) || isDigit(c) || c == '-' || c == '_' || c == '\\' || c >= 0x80;
     }
 }
