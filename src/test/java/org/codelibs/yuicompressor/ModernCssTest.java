@@ -45,4 +45,52 @@ class ModernCssTest {
         String result = compress("@media screen AND (min-width: 400px) { .m { color: red } }");
         assertEquals("@media screen and (min-width:400px){.m{color:red}}", result);
     }
+
+    @Test
+    void customPropertyColorIsNotRewritten() throws Exception {
+        assertEquals(":root{--main-color:#ff0000}", compress(":root { --main-color: #ff0000; }"));
+    }
+
+    @Test
+    void customPropertyInnerWhitespaceIsPreserved() throws Exception {
+        String result = compress(":root { --txt: hello  world; }");
+        assertTrue(result.contains("hello  world"),
+                "a custom property value is a token stream and must be kept verbatim: " + result);
+    }
+
+    @Test
+    void propertyAtRuleInitialValueIsNotRewritten() throws Exception {
+        String result = compress("@property --c { syntax: '<color>'; inherits: false; initial-value: #ff0000; }");
+        assertTrue(result.contains("#ff0000"),
+                "an @property initial-value must be kept verbatim: " + result);
+    }
+
+    @Test
+    void ordinaryColorIsStillOptimised() throws Exception {
+        assertEquals("a{color:red}", compress("a { color: #ff0000; }"));
+    }
+
+    @Test
+    void customPropertyKeywordCaseIsNotFolded() throws Exception {
+        assertEquals(":root{--my-op:NOT(x)}", compress(":root { --my-op: NOT(x); }"));
+    }
+
+    @Test
+    void commentMentioningPropertyDoesNotSwallowFollowingRule() throws Exception {
+        String result = compress("/* TODO use @property here */\na { color: #ff0000; }");
+        assertEquals("a{color:red}", result);
+        assertTrue(result.indexOf("___YUICSSMIN") < 0,
+                "no internal placeholder should ever leak into the output: " + result);
+    }
+
+    @Test
+    void propertyAtRuleDescriptorStringContainingBraceDoesNotMisleadBlockScan() throws Exception {
+        String result = compress("@property --c { syntax: \"}\"; inherits: false; initial-value: #ff0000; }");
+        assertTrue(result.contains("#ff0000"),
+                "a '}' inside a quoted descriptor value must not be read as the block's closing brace: " + result);
+
+        String result2 = compress("@property --c { syntax: '{'; inherits: false; initial-value: #ff0000; }");
+        assertTrue(result2.contains("#ff0000"),
+                "a '{' inside a quoted descriptor value must not be read as a nested block: " + result2);
+    }
 }

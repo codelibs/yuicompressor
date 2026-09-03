@@ -103,6 +103,153 @@ public class CssCompressor {
         return sb.toString();
     }
 
+    /**
+     * Replaces every @property at-rule block with a preserved token. A descriptor such
+     * as initial-value must be kept verbatim, just like a custom property value, so the
+     * simplest and safest approach is to preserve the whole block as one opaque unit.
+     * This must run after comment and string preservation (see the call site), so that
+     * "@property" cannot be matched inside a comment and a brace inside a descriptor
+     * string cannot be mistaken for the block's own closing brace. Because of that
+     * ordering, the captured block can itself contain an already-preserved-token
+     * placeholder (e.g. its syntax descriptor's quoted value); resolvePreservedTokenReferences
+     * flattens that out before the block is stored, the same way preserveCustomPropertyValues
+     * does for a captured declaration value.
+     */
+    private String preservePropertyAtRuleBlocks(String css, ArrayList preservedTokens) {
+        StringBuffer sb = new StringBuffer();
+        int i = 0;
+        int len = css.length();
+        Pattern p = Pattern.compile("(?i)@property\\b");
+        Matcher m = p.matcher(css);
+        while (i < len) {
+            if (!m.find(i)) {
+                sb.append(css, i, len);
+                break;
+            }
+            int start = m.start();
+            int brace = css.indexOf('{', m.end());
+            if (brace < 0) {
+                sb.append(css, i, len);
+                break;
+            }
+            int depth = 0;
+            int end = brace;
+            while (end < len) {
+                char c = css.charAt(end);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+                end++;
+            }
+            if (end >= len) {
+                // No matching closing brace found; leave the rest of the CSS as-is.
+                sb.append(css, i, len);
+                break;
+            }
+            sb.append(css, i, start);
+            String block = resolvePreservedTokenReferences(css.substring(start, end + 1), preservedTokens);
+            preservedTokens.add(block);
+            sb.append("___YUICSSMIN_PRESERVED_TOKEN_").append(preservedTokens.size() - 1).append("___");
+            i = end + 1;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Replaces the value of every custom property declaration with a preserved
+     * token so that the later value transformations cannot rewrite it. A custom
+     * property value is an arbitrary token stream and must survive verbatim.
+     */
+    private String preserveCustomPropertyValues(String css, ArrayList preservedTokens) {
+        StringBuffer sb = new StringBuffer();
+        int i = 0;
+        int len = css.length();
+        while (i < len) {
+            int start = css.indexOf("--", i);
+            if (start < 0) {
+                sb.append(css, i, len);
+                break;
+            }
+            // A declaration starts after '{' or ';', which distinguishes a custom
+            // property from a '--' appearing inside a value such as calc(a --b).
+            int before = start - 1;
+            while (before >= 0 && Character.isWhitespace(css.charAt(before))) {
+                before--;
+            }
+            if (before < 0 || (css.charAt(before) != '{' && css.charAt(before) != ';')) {
+                sb.append(css, i, start + 2);
+                i = start + 2;
+                continue;
+            }
+            int colon = css.indexOf(':', start);
+            if (colon < 0) {
+                sb.append(css, i, len);
+                break;
+            }
+            int depth = 0;
+            int end = colon + 1;
+            while (end < len) {
+                char c = css.charAt(end);
+                if (c == '(' || c == '[' || c == '{') {
+                    depth++;
+                } else if (c == ')' || c == ']') {
+                    depth--;
+                } else if (c == '}') {
+                    if (depth == 0) {
+                        break;
+                    }
+                    depth--;
+                } else if (c == ';' && depth == 0) {
+                    break;
+                }
+                end++;
+            }
+            // A value such as --content: "a;b"; already had its string content pulled out
+            // by the string-preservation step above, so what we capture here is
+            // ...___YUICSSMIN_PRESERVED_TOKEN_0___..., not the raw string. Resolve any
+            // such reference now, against the already-preserved tokens, and store the
+            // fully expanded value. Without this, the token we add below would embed a
+            // reference to an earlier (lower) index, and the single forward pass that
+            // restores preserved tokens at the end of compress() would never revisit
+            // that earlier index once it's inserted, leaving the placeholder unresolved
+            // in the final output.
+            String value = css.substring(colon + 1, end).trim();
+            value = resolvePreservedTokenReferences(value, preservedTokens);
+            preservedTokens.add(value);
+            sb.append(css, i, colon + 1);
+            sb.append("___YUICSSMIN_PRESERVED_TOKEN_").append(preservedTokens.size() - 1).append("___");
+            i = end;
+        }
+        return sb.toString();
+    }
+
+    private static final Pattern PRESERVED_TOKEN_REFERENCE = Pattern.compile("___YUICSSMIN_PRESERVED_TOKEN_(\\d+)___");
+
+    /**
+     * Expands any placeholder already inserted by an earlier preservation step (a
+     * preserved string, in particular) back to its real text. See the comment at the
+     * call site in preserveCustomPropertyValues for why this is necessary.
+     */
+    private String resolvePreservedTokenReferences(String value, ArrayList preservedTokens) {
+        if (value.indexOf("___YUICSSMIN_PRESERVED_TOKEN_") < 0) {
+            return value;
+        }
+        Matcher m = PRESERVED_TOKEN_REFERENCE.matcher(value);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            int index = Integer.parseInt(m.group(1));
+            String replacement = index < preservedTokens.size() ? preservedTokens.get(index).toString() : m.group();
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
     public void compress(Writer out, int linebreakpos)
             throws IOException {
 
@@ -218,7 +365,24 @@ public class CssCompressor {
             preservedTokens.add(backslash9);
             css = css.replace(backslash9,  "___YUICSSMIN_PRESERVED_TOKEN_" + (preservedTokens.size() - 1) + "___");
      	}
-        
+
+        // Preserve @property at-rule blocks verbatim. A descriptor such as
+        // initial-value is an arbitrary token stream, just like a custom property
+        // value, and must survive unchanged. This runs after comment and string
+        // preservation above, so "@property" inside a comment cannot match here (the
+        // comment is already an opaque placeholder) and a brace inside a descriptor
+        // string cannot be mistaken for the block's closing brace (the string is
+        // already an opaque placeholder too). It runs before the custom-property scan
+        // below so that scan never has to reason about "@property" blocks at all.
+        css = this.preservePropertyAtRuleBlocks(css, preservedTokens);
+
+        // Preserve custom property declaration values verbatim. A custom property's
+        // value is an arbitrary token stream (spec-defined), not a value the color/
+        // keyword optimisers below understand, so it must survive unchanged. This runs
+        // after string/URL/calc preservation above so that a quote or semicolon inside
+        // an already-preserved token cannot be mistaken for the end of the value.
+        css = this.preserveCustomPropertyValues(css, preservedTokens);
+
         // Normalize all whitespace strings to single spaces. Easier to work with that way.
         css = css.replaceAll("\\s+", " ");
 
