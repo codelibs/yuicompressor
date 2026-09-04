@@ -93,4 +93,45 @@ class ModernCssTest {
         assertTrue(result2.contains("#ff0000"),
                 "a '{' inside a quoted descriptor value must not be read as a nested block: " + result2);
     }
+
+    @Test
+    void emptyLayerDeclarationIsKept() throws Exception {
+        String result = compress("@layer utilities {} .a { color: red }");
+        assertTrue(result.contains("@layer utilities"),
+                "an empty @layer still declares layer order and must be kept: " + result);
+    }
+
+    @Test
+    void emptyPlainRuleIsStillRemoved() throws Exception {
+        assertEquals("a{color:red}", compress(".empty {} a { color: red }"));
+    }
+
+    @Test
+    void modernAtRuleNameIsLowercased() throws Exception {
+        String result = compress("@LAYER base { a { color: red } }");
+        assertTrue(result.startsWith("@layer"), "the at-rule name should be lowercased: " + result);
+    }
+
+    @Test
+    void emptyMediaBlockIsStillRemoved() throws Exception {
+        assertEquals("a{color:red}", compress("@media screen {} a { color: red }"));
+    }
+
+    @Test
+    void compressedOutputNeverLeaksInternalPlaceholder() throws Exception {
+        String[] inputs = {
+                "a { content: 'a string value' }",
+                "a { background: url(data:image/png;base64,iVBORw0KGgo=) }",
+                "a { width: calc(100% - 10px) }",
+                "/*! preserved comment */\na { color: red }",
+                "/* ordinary comment */\na { color: red }",
+                ":root { --main-color: #ff0000; }",
+                "@property --c { syntax: '<color>'; inherits: false; initial-value: #ff0000; }",
+        };
+        for (String input : inputs) {
+            String result = compress(input);
+            assertTrue(result.indexOf("___YUICSSMIN") < 0,
+                    "no internal placeholder should ever leak into the output for input [" + input + "]: " + result);
+        }
+    }
 }

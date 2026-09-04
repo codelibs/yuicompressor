@@ -443,7 +443,7 @@ public class CssCompressor {
 
         // lowercase some popular @directives (@charset is done right above)
         sb = new StringBuffer();
-        p = Pattern.compile("(?i)@(font-face|import|(?:-(?:atsc|khtml|moz|ms|o|wap|webkit)-)?keyframe|media|page|namespace)");
+        p = Pattern.compile("(?i)@(font-face|import|(?:-(?:atsc|khtml|moz|ms|o|wap|webkit)-)?keyframe|media|page|namespace|supports|container|layer|property|scope|starting-style)");
         m = p.matcher(css);
         while (m.find()) {
             m.appendReplacement(sb, '@' + m.group(1).toLowerCase());
@@ -659,8 +659,32 @@ public class CssCompressor {
         // Add token to add the "\" back in later
         css = css.replaceAll("\\(([\\-A-Za-z]+):([0-9]+)\\/([0-9]+)\\)", "($1:$2___YUI_QUERY_FRACTION___$3)");
 
-        // Remove empty rules.
-        css = css.replaceAll("[^\\}\\{/;]+\\{\\}", "");
+        // Remove empty rules, but keep empty '@layer' blocks: an empty '@layer name {}'
+        // still declares the layer and fixes its position in the cascade order, so
+        // removing it would change rendering. Every other at-rule (e.g. '@media',
+        // '@supports') does nothing at all when its body is empty, so those are still
+        // removed, same as a plain empty rule.
+        //
+        // A plain char-class exclusion of '@' is not enough to implement even just the
+        // '@layer' exception, because an unanchored regex would just resume matching
+        // right after the '@' (e.g. deleting "layer utilities {}" out of
+        // "@layer utilities {}" and leaving a stray "@" behind). So the three cases are
+        // matched as explicit alternatives instead: an '@layer' prelude is kept
+        // verbatim; any other at-rule prelude is matched and deleted as one unit (so its
+        // '@' is never separated from the rest and left stranded); a plain prelude is
+        // deleted as before.
+        sb = new StringBuffer();
+        p = Pattern.compile("(?i)(@layer[^\\}\\{/;]*\\{\\})|(@[^\\}\\{/;]*\\{\\}|[^\\}\\{/;@]+\\{\\})");
+        m = p.matcher(css);
+        while (m.find()) {
+            if (m.group(1) != null) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(m.group(1)));
+            } else {
+                m.appendReplacement(sb, "");
+            }
+        }
+        m.appendTail(sb);
+        css = sb.toString();
 
         // Add "\" back to fix Opera -o-device-pixel-ratio query
         css = css.replaceAll("___YUI_QUERY_FRACTION___", "/");
