@@ -173,6 +173,10 @@ public class JavaScriptCompressor {
     private AstRoot ast;
     private ScopeBuilder scopeBuilder;
     private ScriptOrFnScope globalScope;
+    // Kept so MungedCodeGenerator can read the original operator text for
+    // optional chaining (Rhino's QUESTION_DOT node type does not, on its own,
+    // say which link of a chain actually carries "?.").
+    private String sourceText;
 
     public JavaScriptCompressor(Reader in, ErrorReporter reporter)
             throws IOException, EvaluatorException {
@@ -208,6 +212,7 @@ public class JavaScriptCompressor {
             sourceCode.append(buffer, 0, read);
         }
         String source = sourceCode.toString();
+        this.sourceText = source;
 
         // Scan for special comments before parsing
         scanForSpecialComments(source);
@@ -287,7 +292,7 @@ public class JavaScriptCompressor {
                 }
 
                 // Generate code with munged variable names
-                MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge);
+                MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge, this.sourceText);
                 compressed = generator.generate(this.ast);
 
                 // Extract string literals to protect them from whitespace compression

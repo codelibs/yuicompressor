@@ -22,10 +22,24 @@ public class MungedCodeGenerator {
     private ScopeBuilder scopeBuilder;
     private boolean munge;
     private StringBuilder output;
+    // The original source text. Rhino's QUESTION_DOT type marks every link of an
+    // optional chain (e.g. both accesses in "a?.b.c"), not just the one that is
+    // actually optional, and FunctionCall.isOptionalCall() over-reports the same
+    // way. The only reliable way to know whether one particular link carries "?."
+    // is to look at the real source text between that link's target and its
+    // property/element/argument list. May be null (e.g. legacy callers/tests that
+    // build an AST without an associated source string); optional chaining then
+    // conservatively falls back to the plain, non-optional form.
+    private String source;
 
     public MungedCodeGenerator(ScopeBuilder scopeBuilder, boolean munge) {
+        this(scopeBuilder, munge, null);
+    }
+
+    public MungedCodeGenerator(ScopeBuilder scopeBuilder, boolean munge, String source) {
         this.scopeBuilder = scopeBuilder;
         this.munge = munge;
+        this.source = source;
         this.output = new StringBuilder();
     }
 
@@ -323,17 +337,23 @@ public class MungedCodeGenerator {
                 // Rhino keeps optional chaining as QUESTION_DOT on an ordinary
                 // PropertyGet / ElementGet node, and its own toSource() drops the
                 // "?.", so it has to be printed here rather than by the fallback.
+                // QUESTION_DOT marks every link of the chain though (see
+                // isOptionalGap()), so whether *this* link gets "?." or a plain "."
+                // depends on the actual source text, not the node type alone.
                 if (node instanceof ElementGet) {
-                    ElementGet optionalElement = (ElementGet) node;
-                    visitNode(optionalElement.getTarget());
-                    output.append("?.[");
-                    visitNode(optionalElement.getElement());
+                    ElementGet elementGet = (ElementGet) node;
+                    AstNode target = elementGet.getTarget();
+                    AstNode element = elementGet.getElement();
+                    visitNode(target);
+                    output.append(isOptionalGap(target, element.getAbsolutePosition()) ? "?.[" : "[");
+                    visitNode(element);
                     output.append("]");
                 } else if (node instanceof PropertyGet) {
-                    PropertyGet optionalProperty = (PropertyGet) node;
-                    visitNode(optionalProperty.getTarget());
-                    output.append("?.");
-                    AstNode property = optionalProperty.getProperty();
+                    PropertyGet propertyGet = (PropertyGet) node;
+                    AstNode target = propertyGet.getTarget();
+                    AstNode property = propertyGet.getProperty();
+                    visitNode(target);
+                    output.append(isOptionalGap(target, property.getAbsolutePosition()) ? "?." : ".");
                     if (property instanceof Name) {
                         output.append(((Name) property).getIdentifier());
                     } else {
@@ -914,8 +934,14 @@ public class MungedCodeGenerator {
     }
 
     private void visitFunctionCall(FunctionCall call) {
-        visitNode(call.getTarget());
-        if (call.isOptionalCall()) {
+        AstNode target = call.getTarget();
+        visitNode(target);
+        // FunctionCall.isOptionalCall() over-reports the same way QUESTION_DOT
+        // does: it is true for every call in an optional chain, not just the one
+        // immediately after "?." (e.g. in "a?.b().c()" it is also true for
+        // ".c()"). So it cannot be trusted on its own; go straight to the source
+        // text, exactly like the QUESTION_DOT case above.
+        if (isOptionalGap(target, call.getAbsolutePosition() + call.getLp())) {
             output.append("?.");
         }
         output.append("(");
@@ -1090,6 +1116,48 @@ public class MungedCodeGenerator {
             }
         }
         return false;
+    }
+
+    // Strips block and line comments so a comment's literal text (e.g.
+    // "a /* ?. */ .b") can never be mistaken for an operator.
+    private static final java.util.regex.Pattern BLOCK_COMMENT =
+            java.util.regex.Pattern.compile("/\\*[\\s\\S]*?\\*/");
+    private static final java.util.regex.Pattern LINE_COMMENT =
+            java.util.regex.Pattern.compile("//[^\\n\\r]*");
+
+    private String stripComments(String text) {
+        text = BLOCK_COMMENT.matcher(text).replaceAll("");
+        text = LINE_COMMENT.matcher(text).replaceAll("");
+        return text;
+    }
+
+    /**
+     * Whether the gap between the end of {@code target} and the start of the next
+     * significant token (a property name, an element expression, or an argument
+     * list's opening paren, given by {@code tokenStart}) actually contains the
+     * "?." operator in the original source.
+     *
+     * <p>QUESTION_DOT-typed nodes and FunctionCall.isOptionalCall() both mark
+     * every link of an optional chain, not just the one link that is actually
+     * optional (Rhino's own toSource() cannot tell them apart either, which is
+     * why it drops "?." altogether). Reading the real source text between the
+     * two positions is the only reliable way to tell whether this particular
+     * link carries its own "?." or is a plain "." / "[" / "(" continuation of a
+     * chain that started optional earlier.
+     */
+    private boolean isOptionalGap(AstNode target, int tokenStart) {
+        if (source == null) {
+            // No source text available (e.g. a legacy caller/test that built the
+            // AST directly): fall back to the conservative, non-optional form.
+            return false;
+        }
+        int targetEnd = target.getAbsolutePosition() + target.getLength();
+        if (targetEnd < 0 || tokenStart < targetEnd || tokenStart > source.length()) {
+            // Positions don't make sense - don't guess, assume plain.
+            return false;
+        }
+        String gap = stripComments(source.substring(targetEnd, tokenStart));
+        return gap.contains("?.");
     }
 
     /**

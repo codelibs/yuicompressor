@@ -1,5 +1,6 @@
 package org.codelibs.yuicompressor;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,13 @@ class ModernJsTest {
         return out.toString().trim();
     }
 
+    private String compressNoMunge(String source) throws Exception {
+        StringWriter out = new StringWriter();
+        new JavaScriptCompressor(new StringReader(source), SILENT)
+                .compress(out, -1, false, false, false, false);
+        return out.toString().trim();
+    }
+
     @Test
     void optionalChainingOnPropertyIsPreserved() throws Exception {
         String result = compress("var v = a?.b?.c;");
@@ -65,5 +73,42 @@ class ModernJsTest {
         String result = compress("var o = { m(){ return 1; } }; o.m();");
         assertFalse(result.contains("function"),
                 "a shorthand method should not expand to a function expression: " + result);
+    }
+
+    // Rhino marks every link of an optional chain with the same QUESTION_DOT
+    // type (and FunctionCall.isOptionalCall() over-reports the same way), so a
+    // naive "type says QUESTION_DOT => emit '?.'" fix widens mixed chains: it
+    // adds a "?." to links that were never optional in the source. That is its
+    // own silent behaviour change - e.g. "a?.b.c" throws on a null "a" while
+    // "a?.b?.c" quietly evaluates to undefined. These assert the exact output
+    // so a chain is reproduced link-for-link, not merely "contains '?.'
+    // somewhere".
+
+    @Test
+    void optionalChainDoesNotWidenToTrailingPlainProperty() throws Exception {
+        String result = compressNoMunge("var v = a?.b.c;");
+        assertEquals("var v=a?.b.c;", result,
+                "only 'a?.b' is optional; 'a?.b?.c' would turn a TypeError into undefined: " + result);
+    }
+
+    @Test
+    void optionalChainDoesNotWidenToLeadingOrTrailingPlainProperty() throws Exception {
+        String result = compressNoMunge("var v = a.b?.c.d;");
+        assertEquals("var v=a.b?.c.d;", result,
+                "only 'c' is reached optionally; neither 'a.b' nor '.d' may gain '?.': " + result);
+    }
+
+    @Test
+    void optionalElementChainDoesNotWidenToTrailingPlainProperty() throws Exception {
+        String result = compressNoMunge("var v = a?.[0].c;");
+        assertEquals("var v=a?.[0].c;", result,
+                "the trailing '.c' is not optional and must not gain '?.': " + result);
+    }
+
+    @Test
+    void optionalCallChainDoesNotWidenToTrailingPlainProperty() throws Exception {
+        String result = compressNoMunge("var v = a?.b().c;");
+        assertEquals("var v=a?.b().c;", result,
+                "the call and the trailing '.c' are not themselves optional: " + result);
     }
 }
