@@ -26,9 +26,12 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   unpreserved `url()` was hoisted out of the URL to the top of the stylesheet
 - Empty `@layer` blocks (e.g. `@layer base, components, utilities;`) are no longer deleted; they
   declare cascade order even with no rules inside
-- Modern at-rule names (`@container`, `@layer`, `@property`, `@scope`,
-  `@starting-style`, `@supports`) are now normalised to lowercase, extending the
-  existing at-rule lowercasing list
+- Modern at-rule names (`@container`, `@layer`, `@scope`, `@starting-style`, `@supports`) are now
+  normalised to lowercase, extending the existing at-rule lowercasing list. `@property` is in that
+  list but is **not** lowercased in practice: the whole `@property` block is replaced by a preserved
+  token before the lowercasing pass runs, so `@PROPERTY --c {...}` passes through unchanged. That
+  whole-block preservation is deliberate (a descriptor value is an arbitrary token stream), so the
+  claim is corrected here rather than the behaviour
 
 ### Fixed (JavaScript)
 - Optional chaining is preserved and no longer widened: `a?.b.c` now stays `a?.b.c` instead of
@@ -58,7 +61,25 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   identifier is both the property key and the binding; munging it renamed the property in an
   object literal and, in a destructuring pattern, read a property the caller never passed -
   `function f({b}){return b;}` called with `{b:7}` returned `undefined`. It now expands to
-  `{b:a}` when the binding is munged, and stays shorthand when it is not
+  `{b:a}` when the binding is munged, and stays shorthand when it is not.
+  The same applies to shorthand carrying a default, `{b = 1}`, which Rhino reports as
+  *not* shorthand and which therefore went on corrupting after the first version of this fix. In
+  that form the same `Name` object is both key and binding, so the key guard suppressed munging on
+  the binding while body references were munged. All three positions are fixed - destructured
+  parameter, `var` destructuring, and assignment destructuring. The last was silent:
+  `({someKey = 5} = o)` returned `undefined` instead of `5` and passed `node --check`
+- Trailing array elisions keep their slot. A comma in an array literal is a separator, so a
+  trailing one is not an element - `[a,b,]` and `[a,b]` are both length 2 - which means a trailing
+  hole needs a comma of its own. `[, , x, , ]` was emitted as `[,,b,]`, changing the array from
+  length 4 to length 3
+- BigInt literals (`10n`) are handled rather than routed through the `toSource()` fallback. This
+  was harmless by luck in the default path, but strict mode could not compress any file containing
+  one
+- `for each (var b in a)` emits its keyword before the parenthesis. It was emitted as
+  `for(var a each in b)`, which this compressor's own parser rejects - invalid output with a
+  success exit code
+- `catch (e if e instanceof TypeError)` keeps its guard, which was silently dropped, widening the
+  catch to every exception
 - Generator object methods (`var o = { *gen(){ yield 1; } };`) no longer crash the compressor
   with a `ClassCastException`
 - Getter and setter properties no longer fail open: a non-function right-hand side used to emit
@@ -100,10 +121,13 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   not to munge
 
 ### Documented (behaviour that was described inaccurately)
-- `--preserve-semi`, `--disable-optimizations` and `-v/--verbose` are accepted and **ignored**.
-  They are now marked as such in the README and in the `compress(...)` javadoc. Implementing them
-  is Release 2 work; the Release 1 fix is that a caller passing them is no longer left believing
-  they took effect
+- `--preserve-semi` and `--disable-optimizations` are accepted and **ignored**. They are now marked
+  as such in the README and in the `compress(...)` javadoc. Implementing them is Release 2 work;
+  the Release 1 fix is that a caller passing them is no longer left believing they took effect
+- `-v/--verbose` is **mostly** unimplemented, not entirely: the CLI reads it for one informational
+  line when an unsupported charset is replaced by UTF-8, and the compressors never read it at all.
+  An earlier draft of this entry said it was ignored outright, which was wrong about the flag
+  though right about the `compress(...)` parameter
 - `"name:nomunge"` hints are **not implemented**: the named symbols are munged anyway and the hint
   string is emitted into the output as a live statement rather than disappearing. The README said
   otherwise
@@ -127,14 +151,34 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   `suite.sh` says to do
 - Added compressor option coverage, modern CSS/JS regression tests, a round-trip parameter table
   (`ParameterListTest`), a strict-mode fallback guard (`StrictNodeCoverageTest`), and an output
-  guard (`JsOutputSyntaxTest`) that runs `node --check` against all 10 JS fixtures plus a
-  comment-injection scanner over every one of them
-- Added `DifferentialExecutionTest`: 25 small, deterministic scripts run under node twice, once
+  guard (`JsOutputSyntaxTest`) that runs `node --check` against 9 of the 10 JS fixtures plus a
+  comment-injection scanner over all 10. The tenth,
+  `promise-catch-finally-issue203.js`, is skipped rather than silently passed: node rejects its
+  *source*, so there is nothing to check
+- Added `DifferentialExecutionTest`: 34 small, deterministic scripts run under node twice, once
   as source and once compressed, comparing stdout and exit status. `node --check` only proves the
   output parses, and *every* silent-corruption defect in this release produced output that
-  parsed. This test found one nobody had reported - the shorthand-property key renaming above
-- Test suite grew from 163 to 457 tests (2 skipped: the two `ES6SupportTest` cases Rhino cannot
-  parse). Without node on `PATH`, 422 execute and 3 further test methods are skipped
+  parsed. This test found two nobody had reported - the shorthand-property key renaming above,
+  and the shorthand-with-default corruption
+- This class is **half** of the net, not the net. It detects semantic change under compression
+  and nothing else: a compressor that echoed its input, or that had munging disabled entirely,
+  would leave it green (both measured). The golden fixtures and the exact-output tests are what
+  cover the other half - disabling munging fails 25 tests across five classes
+- A missing `node` skips; a broken `node` fails. Both availability probes were
+  `catch (Exception e) { return false; }`, so a `node` that was present but broken, sandboxed or
+  hanging disabled the whole differential net silently and still reported success. Only "not on
+  `PATH`" skips now. Every `node` process is bounded by a timeout and writes to files rather than
+  pipes, so a looping or output-heavy script fails instead of hanging the build
+- Skips are counted honestly. Disabling whole methods with `@EnabledIf` hid 35 real executions
+  behind 3 skip lines; they are now skipped per case, so without node on `PATH` the report reads
+  46 skipped rather than 5
+- A size and shape pin for `jquery-1.6.4.js` (`104,770` bytes, zero `{{`, 1,259 `;}`). It is
+  quarantined from the golden comparison, which had left the only large real-world fixture with no
+  byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
+  the golden test green
+- Test suite grew from 163 to 492 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+  parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
+  the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
   `ant.properties`) and Travis CI configuration (`.travis.yml`)
 

@@ -233,6 +233,14 @@ class ModernJsTest {
      * else is by definition inside a token.
      */
     private void assertEveryLineBreakIsAtAStatementBoundary(String result) {
+        // Assert a break actually happened first. Without this the loop below
+        // is vacuous when addLineBreaks does nothing at all: making it a no-op
+        // left this check, all three differential line-break cases and
+        // CliOptionTest green, and only the exact-output tests caught it. A
+        // "no line break landed badly" assertion that passes because there are
+        // no line breaks is the shape this release keeps removing.
+        assertTrue(result.indexOf('\n') >= 0,
+                "no line break was inserted at all, so this assertion would prove nothing: " + result);
         for (int i = 0; i < result.length(); i++) {
             if (result.charAt(i) != '\n') {
                 continue;

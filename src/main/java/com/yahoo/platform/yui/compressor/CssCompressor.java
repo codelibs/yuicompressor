@@ -290,6 +290,15 @@ public class CssCompressor {
      * followed by ")".
      * </ul>
      *
+     * <p>One accepted cost of restricting to comments: an at-rule written
+     * directly after a preserved {@code @property} block is preceded by that
+     * block's bare placeholder, so it is not recognised and its name is not
+     * lowercased - {@code @property --x{...}@MEDIA screen{...}} keeps
+     * {@code @MEDIA}. At-rule names are ASCII case-insensitive, so this is a
+     * missed optimisation on a rare adjacency, and the alternative (accepting
+     * bare placeholders) is what reopened the corruption above. Recorded rather
+     * than fixed.
+     *
      * <p>An ordinary (non-preserved) comment never reaches this test at all:
      * it is deleted whole, "/*" and "*" + "/" included, by the "kill the
      * comment" pass, so "{" ends up directly adjacent to what follows it. That

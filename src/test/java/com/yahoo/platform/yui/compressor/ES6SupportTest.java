@@ -328,17 +328,13 @@ public class ES6SupportTest {
     // ===== AST Parsing Tests =====
 
     @Test
-    public void testParseArrowFunction() throws Exception {
-        String source = "const f = x => x * 2;";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse arrow function");
+    public void testArrowFunctionSurvivesCompression() throws Exception {
+        assertEquals("const f=a=>{return a*2;};", compress("const f = x => x * 2;", true).trim());
     }
 
     @Test
-    public void testParseTemplateLiteral() throws Exception {
-        String source = "const s = `hello ${name}`;";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse template literal");
+    public void testTemplateLiteralSurvivesCompression() throws Exception {
+        assertEquals("const s=`hello ${name}`;", compress("const s = `hello ${name}`;", false).trim());
     }
 
     @Disabled("Rhino 1.8.0 does not support ES6 class syntax")
@@ -350,18 +346,16 @@ public class ES6SupportTest {
     }
 
     @Test
-    public void testParseForOf() throws Exception {
+    public void testForOfSurvivesCompression() throws Exception {
         // Note: Rhino 1.8.0 does not support 'const' in for-of loops, using 'let' instead
-        String source = "for (let x of arr) { console.log(x); }";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse for-of loop");
+        assertEquals("for(let x of arr){console.log(x);}",
+                compress("for (let x of arr) { console.log(x); }", false).trim());
     }
 
     @Test
-    public void testParseDestructuring() throws Exception {
-        String source = "const [a, b] = arr; const {x, y} = obj;";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse destructuring");
+    public void testDestructuringSurvivesCompression() throws Exception {
+        assertEquals("const [a,b]=arr;const {x,y}=obj;",
+                compress("const [a, b] = arr; const {x, y} = obj;", false).trim());
     }
 
     @Disabled("Rhino 1.8.0 does not support spread operator in arrays")
@@ -496,18 +490,18 @@ public class ES6SupportTest {
 
     @Test
     public void testArrayDestructuringWithEmptyElement() throws Exception {
-        // Test: const [a, , b] = arr; (middle element is empty)
-        String source = "const [first, , third] = [1, 2, 3];";
-        String result = compress(source);
-        assertNotNull(result, "Should handle array destructuring with empty elements");
+        // Test: const [a, , b] = arr; (middle element is empty). The hole must
+        // survive: dropping it would shift "third" onto the second slot.
+        String result = compress("const [first, , third] = [1, 2, 3];", false);
+        assertEquals("const [first,,third]=[1,2,3];", result.trim(), result);
     }
 
     @Test
     public void testFunctionParameterDestructuringWithEmptyElement() throws Exception {
-        // Test: function([a, , b]) where middle element is skipped
-        String source = "function test([first, , third]) { return first + third; }";
-        String result = compress(source);
-        assertNotNull(result, "Should handle parameter destructuring with empty elements");
+        // Test: function([a, , b]) where middle element is skipped. Both
+        // bindings munge; the hole between them keeps its position.
+        String result = compress("function test([first, , third]) { return first + third; }");
+        assertEquals("function test([b,,a]){return b+a;}", result.trim(), result);
     }
 
     // ===== Combined ES6 Features =====

@@ -184,8 +184,10 @@ Global Options
         ... will minify all .css files and save them as -min.css
 
     -v, --verbose
-        NOT CURRENTLY IMPLEMENTED - accepted and ignored.
-        Display informational messages and warnings.
+        MOSTLY UNIMPLEMENTED. The flag reaches the CLI, where it enables one
+        informational line ("Using charset ...") when the requested charset is
+        unsupported and UTF-8 is substituted. The compressors themselves never
+        read it, so no other informational message or warning is produced.
 
 JavaScript Only Options
 -----------------------

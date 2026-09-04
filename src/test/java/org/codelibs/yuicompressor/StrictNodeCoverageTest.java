@@ -45,6 +45,15 @@ import com.yahoo.platform.yui.compressor.MungedCodeGenerator;
  *
  * <p>Strict mode is deliberately opt-in: production callers keep today's
  * lenient behaviour, and this class is the one place that turns it on.
+ *
+ * <p>The parameterized cases assert only that compression did not throw, which
+ * is vacuous in form - {@code compress()} returns a {@code StringWriter}'s
+ * contents and can never be null. That is correct for a tripwire, whose whole
+ * job is "did any node type reach the fallback", but it means this class must
+ * not be counted as output coverage: it stays green under both the
+ * echo-the-input and no-munging mutations. What the output actually says is
+ * pinned by {@link ModernJsTest}, {@link ParameterListTest} and the golden
+ * fixtures.
  */
 class StrictNodeCoverageTest {
 

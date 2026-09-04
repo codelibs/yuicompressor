@@ -76,11 +76,15 @@ class JsOutputSyntaxTest {
         // Some fixtures are not valid JavaScript to begin with. Rhino is lenient
         // enough to accept them, but the compressor cannot be asked to turn
         // invalid input into valid output, so they are not this test's business.
-        // promise-catch-finally-issue203.js is one: it contains
-        // "new Promise(resolve, reject) {}", which node rejects.
-        if (nodeRejects(source)) {
-            return;
-        }
+        // promise-catch-finally-issue203.js is the one that hits this: it
+        // contains "new Promise(resolve, reject) {}", which node rejects.
+        //
+        // Aborted as a SKIP, not a silent pass. Returning early reported the
+        // method as PASSED, so the run showed 10 node --check executions where
+        // 9 had happened - a small version of exactly the accounting problem
+        // this class exists to prevent.
+        Assumptions.assumeFalse(nodeRejects(source),
+                "node rejects the SOURCE of " + fixture + ", so its output cannot be checked");
 
         JavaScriptCompressor compressor;
         try {

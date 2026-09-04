@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mozilla.javascript.ErrorReporter;
@@ -127,6 +128,44 @@ class JsGoldenFileTest {
                     .collect(Collectors.toList())
                     .stream();
         }
+    }
+
+    /**
+     * A size and shape pin for jquery-1.6.4.js, which is quarantined above and
+     * is the only large real-world fixture in the corpus.
+     *
+     * <p>Quarantining it removed the byte-level guard it used to provide, and
+     * nothing stood in for it: reverting the D1 brace fix - which this class's
+     * own javadoc measures at 2,200 bytes on this very file - left
+     * {@code compressesToGoldenFile} 3/3 green. A byte count and two structural
+     * counts restore a pin without pretending the golden matches.
+     *
+     * <p>These are exact rather than bounded on purpose. Compression output is
+     * deterministic, so a change here is always something a person should look
+     * at; if it is an improvement, the numbers move down and get updated along
+     * with the gap table above.
+     */
+    @Test
+    void jqueryCompressesToItsMeasuredSizeAndShape() throws Exception {
+        String source = new String(Files.readAllBytes(RESOURCES.resolve("jquery-1.6.4.js")), StandardCharsets.UTF_8);
+        StringWriter out = new StringWriter();
+        new JavaScriptCompressor(new StringReader(source), SILENT).compress(out, -1, true, false, false, false);
+        String compressed = out.toString();
+
+        assertEquals(104770, compressed.getBytes(StandardCharsets.UTF_8).length,
+                "jQuery output size changed; if this is an improvement, update this and the gap table above");
+        assertEquals(0, count(compressed, "{{"),
+                "a redundant brace pair is back; see the D1 entry in the gap table above");
+        assertEquals(1259, count(compressed, ";}"),
+                "the ';}' count changed; upstream's ';' removal is unimplemented and this pins its absence");
+    }
+
+    private static int count(String haystack, String needle) {
+        int n = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + 1)) {
+            n++;
+        }
+        return n;
     }
 
     @ParameterizedTest(name = "{0}")
