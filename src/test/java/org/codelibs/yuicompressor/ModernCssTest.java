@@ -1,6 +1,7 @@
 package org.codelibs.yuicompressor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
@@ -259,5 +260,103 @@ class ModernCssTest {
         // The other comment-shaped placeholder, kept as a guard on the
         // narrowed detector.
         assertEquals("html>/**/body{color:red}", compress("html >/**/ body{color:#ff0000}"));
+    }
+
+    // Comment collection is the FIRST pass, so it has to understand CSS
+    // structure itself. It used to be a bare indexOf("/*") scan, which meant a
+    // comment-looking span inside a string or an unquoted url() became a
+    // placeholder sitting mid-value while looking exactly like a leading
+    // banner comment. That defeated the boundary predicate at all four call
+    // sites - a placeholder's shape records how it was created, never where it
+    // sits, so narrowing the predicate again could not have fixed it.
+
+    @Test
+    void aCommentInsideAUrlDoesNotMakeTheFollowingTextAnAtRule() throws Exception {
+        String result = compress("a{background:url(/x/*!k*/@property.png)}b{color:#ff0000;margin:0px}");
+        assertEquals("a{background:url(/x/*!k*/@property.png)}b{color:red;margin:0}", result, result);
+    }
+
+    @Test
+    void aCommentInsideAUrlDoesNotExposeTheUrlToAtDirectiveLowercasing() throws Exception {
+        assertEquals("a{background:url(/x/*!k*/@MEDIA.png)}", compress("a{background:url(/x/*!k*/@MEDIA.png)}"));
+    }
+
+    @Test
+    void aCommentInsideAUrlDoesNotLetAtCharsetEscapeTheUrl() throws Exception {
+        // The worst of the four: the stylesheet's declared encoding was
+        // invented from a URL fragment, and the fragment deleted from the URL.
+        String result = compress("a{background:url(/x/*!k*/@charset \"y\";.png)}b{color:#ff0000}");
+        assertEquals("a{background:url(/x/*!k*/@charset \"y\";.png)}b{color:red}", result, result);
+    }
+
+    @Test
+    void aCommentInsideAUrlDoesNotStartACustomPropertyDeclaration() throws Exception {
+        // The rule after it must minify, which it did not while the url's
+        // contents were being preserved as a custom property value.
+        String result = compress("a{background:url(/x/*!k*/--y:1px)}b{color:#ff0000;margin:0px}");
+        assertEquals("a{background:url(/x/*!k*/--y:1px)}b{color:red;margin:0}", result, result);
+    }
+
+    // The same context-free scan, with no closing delimiter, replaced
+    // everything to end-of-input with a marker the later "kill the comment"
+    // pass could not match - truncating the stylesheet, dropping the following
+    // rules, and emitting internal scaffolding, all with a success exit code.
+
+    @Test
+    void anUnbalancedCommentOpenerInsideAStringDoesNotTruncateTheStylesheet() throws Exception {
+        // content:"/*" is valid CSS and was enough to trigger it.
+        String result = compress("a{content:\"/*\"}b{color:#ff0000;margin:0px}");
+        assertEquals("a{content:\"/*\"}b{color:red;margin:0}", result, result);
+    }
+
+    @Test
+    void aCommentOpenerInsideAUrlDoesNotPairWithAnUnrelatedLaterCloser() throws Exception {
+        String result = compress("a{background:url(/img/*/thumb.png)}b{color:#ff0000}  c{content:\"*/\"}");
+        assertEquals("a{background:url(/img/*/thumb.png)}b{color:red}c{content:\"*/\"}", result, result);
+    }
+
+    @Test
+    void anUnterminatedCommentOpenerInsideADataUrlIsNotAComment() throws Exception {
+        // The realistic trigger for the truncation: a data URL can carry
+        // arbitrary bytes, and this one previously matched a "/*" that had no
+        // closer, taking the rest of the stylesheet with it. Being inside a
+        // url() token, it is not a comment at all, so it does not even reach
+        // the unterminated-comment error.
+        String result = compress("a{background:url(data:text/plain,/*unterminated)}b{color:#ff0000}");
+        assertEquals("a{background:url(data:text/plain,/*unterminated)}b{color:red}", result, result);
+    }
+
+    @Test
+    void aBalancedCommentLikeStringStillRoundTrips() throws Exception {
+        // This always worked; it is the control that says the fix did not
+        // change the case that was already correct.
+        assertEquals("a{content:\"/* */\"}b{color:red}", compress("a{content:\"/* */\"}b{color:#ff0000}"));
+    }
+
+    @Test
+    void aGenuinelyUnterminatedCommentIsRejectedRatherThanGuessedAt() throws Exception {
+        // Browsers consume such a comment to end-of-input, so the stylesheet is
+        // already broken for the author either way. Reproducing that here would
+        // mean silently discarding the rest of the file with exit 0, which is
+        // the corruption this pass exists to stop.
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> compress("a{color:red} /* oops"));
+        assertTrue(failure.getMessage().contains("unterminated CSS comment"), failure.getMessage());
+    }
+
+    @Test
+    void aRealCommentIsStillCollectedAndRemoved() throws Exception {
+        // The control for the whole rewrite: ordinary comments must still be
+        // found and dropped, and preserved banners still kept.
+        assertEquals("a{color:red}", compress("a{/* note */color:#ff0000}"));
+        assertEquals("/*! keep */a{color:red}", compress("/*! keep */a{color:#ff0000}"));
+    }
+
+    @Test
+    void anIdentifierEndingInUrlIsNotTreatedAsAUrlToken() throws Exception {
+        // "myurl(" must not be skipped as a url token, or a comment after it
+        // would be missed.
+        assertEquals("a{background:myurl(x)}b{color:red}",
+                compress("a{background:myurl(x)}/* note */b{color:#ff0000}"));
     }
 }

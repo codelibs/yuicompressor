@@ -238,6 +238,8 @@ public class CssCompressor {
 
     private static final String PRESERVED_TOKEN_PREFIX = "___YUICSSMIN_PRESERVED_TOKEN_";
 
+    private static final String PRESERVE_CANDIDATE_COMMENT_PREFIX = "___YUICSSMIN_PRESERVE_CANDIDATE_COMMENT_";
+
     private static final Pattern PRESERVED_TOKEN_REFERENCE = Pattern.compile("___YUICSSMIN_PRESERVED_TOKEN_(\\d+)___");
 
     /** Characters an at-rule can legitimately follow. */
@@ -299,12 +301,22 @@ public class CssCompressor {
      * bare placeholders) is what reopened the corruption above. Recorded rather
      * than fixed.
      *
-     * <p>An ordinary (non-preserved) comment never reaches this test at all:
-     * it is deleted whole, "/*" and "*" + "/" included, by the "kill the
+     * <p>An ordinary (non-preserved) TERMINATED comment does not reach this
+     * test: it is deleted whole, "/*" and "*" + "/" included, by the "kill the
      * comment" pass, so "{" ends up directly adjacent to what follows it. That
      * is why routine CSS such as ":root{/* note *" + "/--pad:0px}" was never
      * affected by the defect this method fixes, and must not start being
      * affected by the fix.
+     *
+     * <p>That is a statement about terminated comments only, and it is worth
+     * not restating as a general invariant: an UNTERMINATED "/*" used to be
+     * collected as a comment running to end-of-input, whose placeholder the
+     * kill pass could not match, so it did reach here - and truncated the
+     * stylesheet on the way. {@link #collectComments} now rejects that input
+     * rather than guessing at it, which is what makes the sentence above true
+     * as far as it goes. Neither statement is a guarantee that some third
+     * shape cannot arrive; the predicate is defensive about what it accepts
+     * for that reason.
      */
     private static boolean startsAtBoundary(String css, int start, String boundaries) {
         int before = start - 1;
@@ -375,6 +387,136 @@ public class CssCompressor {
         return sb.toString();
     }
 
+    /**
+     * Replaces the body of every comment with a candidate marker, leaving the
+     * "/*" and "*" + "/" delimiters in place.
+     *
+     * <p>This is the first pass over the stylesheet, so nothing has been
+     * preserved yet and it has to understand CSS structure itself. It used to
+     * be a bare {@code indexOf("/*")} loop with an {@code endIndex = totallen}
+     * fallback, which produced two defects that are really one - the scan was
+     * context-free and ran before string and URL handling:
+     *
+     * <ul>
+     * <li>A comment-looking span inside a string or an unquoted {@code url()}
+     * was collected as a comment. The resulting placeholder then sat in the
+     * middle of a value while <em>looking</em> exactly like a leading banner
+     * comment, which defeated {@link #startsAtBoundary} at all four of its
+     * call sites - a placeholder's shape records how it was created, never
+     * where it sits, so no amount of narrowing that predicate could have
+     * fixed it. {@code url(/x/}{@code *!k*}{@code /@charset "y";.png)} invented
+     * a stylesheet encoding out of a URL fragment and deleted the fragment.
+     * <li>An UNTERMINATED "/*" replaced everything to end-of-input with a
+     * marker that the later "kill the comment" pass could not match, because
+     * that pass looks for the closing delimiter. The stylesheet was truncated,
+     * the following rules were lost, internal scaffolding was emitted into
+     * shippable CSS, and the exit code was 0. {@code a{content:"/*"}} - valid
+     * CSS - was enough to trigger it.
+     * </ul>
+     *
+     * <p>Both are fixed at the root by scanning structurally: strings and
+     * {@code url()} tokens are stepped over, so their contents can never be
+     * mistaken for a comment.
+     *
+     * <p>An unterminated comment outside a string or URL throws. Browsers
+     * consume such a comment to end-of-input, so the stylesheet is already
+     * broken for the author either way; reproducing that here would mean a
+     * minifier silently discarding the rest of the file with a success exit
+     * code, which is indistinguishable from the corruption this pass exists to
+     * stop. Failing loudly on malformed input is the deliberate trade.
+     */
+    private String collectComments(String css, ArrayList comments) {
+        StringBuilder out = new StringBuilder(css.length());
+        int i = 0;
+        int len = css.length();
+        while (i < len) {
+            char c = css.charAt(i);
+            if (c == '"' || c == '\'') {
+                int end = skipString(css, i);
+                out.append(css, i, end);
+                i = end;
+                continue;
+            }
+            if (startsUrlToken(css, i)) {
+                int end = skipUrlToken(css, i);
+                out.append(css, i, end);
+                i = end;
+                continue;
+            }
+            if (c == '/' && i + 1 < len && css.charAt(i + 1) == '*') {
+                int end = css.indexOf("*/", i + 2);
+                if (end < 0) {
+                    throw new IllegalArgumentException("unterminated CSS comment: \"/*\" at offset " + i
+                            + " has no closing \"*/\". Refusing to compress, because treating it as a comment "
+                            + "would silently discard the remaining " + (len - i) + " characters of the stylesheet.");
+                }
+                comments.add(css.substring(i + 2, end));
+                out.append("/*").append(PRESERVE_CANDIDATE_COMMENT_PREFIX)
+                        .append(comments.size() - 1).append("___").append("*/");
+                i = end + 2;
+                continue;
+            }
+            out.append(c);
+            i++;
+        }
+        return out.toString();
+    }
+
+    /** Index just past the closing quote, or the end of input if unterminated. */
+    private static int skipString(String css, int start) {
+        char quote = css.charAt(start);
+        int i = start + 1;
+        while (i < css.length()) {
+            char c = css.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == quote) {
+                return i + 1;
+            }
+            i++;
+        }
+        return css.length();
+    }
+
+    /**
+     * Whether a {@code url(} function token starts at {@code i}. The preceding
+     * character must not be an identifier character, so {@code myurl(} is not
+     * mistaken for one.
+     */
+    private static boolean startsUrlToken(String css, int i) {
+        if (!css.regionMatches(true, i, "url(", 0, 4)) {
+            return false;
+        }
+        if (i == 0) {
+            return true;
+        }
+        char prev = css.charAt(i - 1);
+        return !(Character.isLetterOrDigit(prev) || prev == '-' || prev == '_');
+    }
+
+    /** Index just past the closing ")", or the end of input if unterminated. */
+    private static int skipUrlToken(String css, int start) {
+        int i = start + 4; // past "url("
+        while (i < css.length()) {
+            char c = css.charAt(i);
+            if (c == '"' || c == '\'') {
+                i = skipString(css, i);
+                continue;
+            }
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == ')') {
+                return i + 1;
+            }
+            i++;
+        }
+        return css.length();
+    }
+
     public void compress(Writer out, int linebreakpos)
             throws IOException {
 
@@ -396,18 +538,7 @@ public class CssCompressor {
         StringBuffer sb = new StringBuffer(css);
 
         // collect all comment blocks...
-        while ((startIndex = sb.indexOf("/*", startIndex)) >= 0) {
-            endIndex = sb.indexOf("*/", startIndex + 2);
-            if (endIndex < 0) {
-                endIndex = totallen;
-            }
-
-            token = sb.substring(startIndex + 2, endIndex);
-            comments.add(token);
-            sb.replace(startIndex + 2, endIndex, "___YUICSSMIN_PRESERVE_CANDIDATE_COMMENT_" + (comments.size() - 1) + "___");
-            startIndex += 2;
-        }
-        css = sb.toString();
+        css = collectComments(css, comments);
 
 
         css = this.preserveToken(css, "url", "(?i)url\\(\\s*([\"']?)data\\:", true, preservedTokens);
