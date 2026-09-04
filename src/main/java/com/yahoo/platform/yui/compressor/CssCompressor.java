@@ -566,6 +566,46 @@ public class CssCompressor {
         return css.length();
     }
 
+    /**
+     * Settles candidate comment markers that ended up inside an already-preserved
+     * span, applying the same rule the "kill the comment" loop applies to the rest
+     * of the stylesheet: a comment whose body starts with "!" is kept, any other is
+     * deleted.
+     *
+     * <p>{@link #preserveToken} captures its span verbatim and that span is put back
+     * only at the very end of {@code compress}, after the loop that resolves those
+     * markers has run. Anything the span swallowed is therefore invisible to that
+     * loop and is emitted as-is. Measured before this existed, on valid CSS and with
+     * exit code 0:
+     *
+     * <pre>
+     * a{width:calc(100% /* n *&#47; - 10px)}
+     *   -&gt; a{width:calc(100% / *___YUICSSMIN_PRESERVE_CANDIDATE_COMMENT_0___ * / - 10px)}
+     * </pre>
+     *
+     * The marker is internal scaffolding, and inside {@code calc()} it is worse than
+     * ugly: {@link #respaceCalcOperators} runs after restoration, reads the marker's
+     * own "/*" and "*&#47;" as division and multiplication operators, and spaces them
+     * out - so a valid declaration is emitted broken.
+     *
+     * <p>Only the three {@code preserveToken} calls have run when this is invoked, so
+     * every entry is one of their spans.
+     */
+    private static void resolveCandidateComments(ArrayList preservedTokens, ArrayList comments) {
+        for (int t = 0; t < preservedTokens.size(); t++) {
+            String value = preservedTokens.get(t).toString();
+            if (value.indexOf(PRESERVE_CANDIDATE_COMMENT_PREFIX) < 0) {
+                continue;
+            }
+            for (int c = 0; c < comments.size(); c++) {
+                String body = comments.get(c).toString();
+                String marker = "/*" + PRESERVE_CANDIDATE_COMMENT_PREFIX + c + "___*/";
+                value = value.replace(marker, body.startsWith("!") ? "/*" + body + "*/" : "");
+            }
+            preservedTokens.set(t, value);
+        }
+    }
+
     public void compress(Writer out, int linebreakpos)
             throws IOException {
 
@@ -594,6 +634,11 @@ public class CssCompressor {
         css = this.preserveToken(css, "calc",  "(?i)calc\\(\\s*([\"']?)", false, preservedTokens);
         css = this.preserveToken(css, "progid:DXImageTransform.Microsoft.Matrix",  "(?i)progid:DXImageTransform.Microsoft.Matrix\\s*([\"']?)", false, preservedTokens);
 
+        // Each span captured just above is restored verbatim at the very end, so a
+        // comment inside one never reaches the "kill the comment" loop below and its
+        // candidate marker would be emitted into shippable CSS. Settle those markers
+        // here, with the same rule that loop applies.
+        resolveCandidateComments(preservedTokens, comments);
 
         // preserve strings so their content doesn't get accidentally minified
         sb = new StringBuffer();
@@ -1032,6 +1077,19 @@ public class CssCompressor {
 
             while (i < sb.length()) {
                 char c = sb.charAt(i);
+
+                // Step over comments before looking at quotes. A quote inside a
+                // comment is not a string delimiter, and the tracking below has no
+                // way to know that on its own: one unpaired quote in a preserved
+                // "/*! ... */" banner inverted it for the rest of the file, and a
+                // linebreak then landed inside a real string literal - a parse error
+                // in CSS, so the declaration is dropped. Measured, exit 0:
+                // /*! say "hi */a{content:"aaaa...}bbbb"} broke inside the string.
+                if (!inString && c == '/' && i + 1 < sb.length() && sb.charAt(i + 1) == '*') {
+                    int commentEnd = sb.indexOf("*/", i + 2);
+                    i = commentEnd < 0 ? sb.length() : commentEnd + 2;
+                    continue;
+                }
 
                 // Track whether we're inside a string literal
                 if (!inString && (c == '"' || c == '\'')) {

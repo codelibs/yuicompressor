@@ -15,8 +15,12 @@ import com.yahoo.platform.yui.compressor.CssCompressor;
 class ModernCssTest {
 
     private String compress(String source) throws Exception {
+        return compress(source, -1);
+    }
+
+    private String compress(String source, int linebreakpos) throws Exception {
         StringWriter out = new StringWriter();
-        new CssCompressor(new StringReader(source)).compress(out, -1);
+        new CssCompressor(new StringReader(source)).compress(out, linebreakpos);
         return out.toString().trim();
     }
 
@@ -421,5 +425,60 @@ class ModernCssTest {
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
                 () -> compress("a{background:url(\"x\" /* oops)}b{color:#ff0000}"));
         assertTrue(failure.getMessage().contains("unterminated CSS comment"), failure.getMessage());
+    }
+
+    // A span captured by preserveToken is restored verbatim at the very end, after the
+    // loop that resolves candidate comment markers has run, so a comment inside one was
+    // emitted as internal scaffolding.
+
+    @Test
+    void aCommentInsideCalcDoesNotBreakTheExpression() throws Exception {
+        // Worst of the family: respaceCalcOperators reads the marker's own "/*" and "*/"
+        // as division and multiplication and spaces them out, so valid CSS was emitted as
+        // calc(100% / *___YUICSSMIN_PRESERVE_CANDIDATE_COMMENT_0___ * / - 10px), exit 0.
+        String result = compress("a{width:calc(100% /* n */ - 10px)}b{color:#ff0000}");
+        assertEquals("a{width:calc(100% - 10px)}b{color:red}", result, result);
+    }
+
+    @Test
+    void aCommentInsideAPreservedSpanNeverLeavesItsMarkerInTheOutput() throws Exception {
+        String dataUrl = compress("a{background:url('data:image/png;base64,AAA=' /* n */)}b{color:#ff0000}");
+        assertEquals("a{background:url('data:image/png;base64,AAA=')}b{color:red}", dataUrl, dataUrl);
+
+        String matrix = compress(
+                "a{filter:progid:DXImageTransform.Microsoft.Matrix(M11=1 /* n */,M12=0)}b{color:#ff0000}");
+        assertEquals("a{filter:progid:DXImageTransform.Microsoft.Matrix(M11=1 ,M12=0)}b{color:red}", matrix, matrix);
+
+        for (String result : new String[] { dataUrl, matrix }) {
+            assertTrue(result.indexOf("___YUICSSMIN") < 0, "internal scaffolding was emitted: " + result);
+        }
+    }
+
+    @Test
+    void aPreservedCommentInsideAPreservedSpanIsStillKept() throws Exception {
+        // The marker is settled with the same rule the "kill the comment" loop uses, so
+        // a "!" comment survives rather than being dropped along with the ordinary ones.
+        String result = compress(
+                "a{filter:progid:DXImageTransform.Microsoft.Matrix(M11=1 /*! keep */,M12=0)}b{color:#ff0000}");
+        assertEquals("a{filter:progid:DXImageTransform.Microsoft.Matrix(M11=1 /*! keep */,M12=0)}b{color:red}",
+                result, result);
+    }
+
+    @Test
+    void aQuoteInsideAPreservedCommentDoesNotPutALinebreakInsideAString() throws Exception {
+        // The linebreak pass tracked string state but not comments, so the '"' in the
+        // banner opened a phantom string that the real string's opening quote closed.
+        // The tracker then believed it was outside a string while inside one, and broke
+        // the line at a "}" in the string's content - a parse error in CSS, exit 0.
+        String source = "/*! say \"hi */a{content:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}bbbbbbbbbbbbbbbbbbbb\"}"
+                + "c{color:#ff0000}";
+        String result = compress(source, 20);
+        assertEquals("/*! say \"hi */a{content:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}bbbbbbbbbbbbbbbbbbbb\"}\n"
+                + "c{color:red}", result, result);
+
+        // Same file without the quote: the break lands in the same place either way.
+        String control = compress("/*! say hi */a{content:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}bbbbbbbbbbbbbbbbbbbb\"}"
+                + "c{color:#ff0000}", 20);
+        assertEquals(result.replace("say \"hi", "say hi"), control, control);
     }
 }
