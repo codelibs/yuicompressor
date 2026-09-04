@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 import org.mozilla.javascript.ErrorReporter;
@@ -133,12 +135,86 @@ class ModernJsTest {
                 "removing the spaces changes what the regex matches: " + result);
     }
 
+    // A bare contains("beta") does not discriminate here: the generator's
+    // minimal (no-munge... well munged, but "beta" isn't renamed since it's
+    // a top-level var) output for this input is
+    // "var alpha=1;var beta=2;var gamma=alpha+beta;gamma++;", and the
+    // project's old fixed-20-char slicer (reinstated: chop every 20 chars,
+    // no regard for token boundaries) would cut it at columns 20 and 40:
+    // "var alpha=1;var beta" / "=2;var gamma=alpha+b" / "eta;gamma++;". The
+    // FIRST "beta" (the declaration) happens to end exactly at column 20,
+    // so it survives whole and contains("beta") still finds it - even
+    // though the SECOND "beta" (in "alpha+beta") gets split into "b" / "eta"
+    // across the line break. Counting whole-token ("\bbeta\b") occurrences
+    // catches that: the old slicer leaves only 1, not 2. Confirmed by
+    // simulating the old slicer against today's actual generator output.
     @Test
     void lineBreakNeverSplitsAnIdentifier() throws Exception {
         StringWriter out = new StringWriter();
         new JavaScriptCompressor(
                 new StringReader("var alpha=1; var beta=2; var gamma=alpha+beta; gamma++;"), SILENT)
                 .compress(out, 20, true, false, false, false);
-        assertTrue(out.toString().contains("beta"), "an identifier was split across lines: " + out);
+        String result = out.toString();
+        Matcher m = Pattern.compile("\\bbeta\\b").matcher(result);
+        int count = 0;
+        while (m.find()) {
+            count++;
+        }
+        assertEquals(2, count, "an identifier was split across a line break: " + result);
+    }
+
+    @Test
+    void yieldStarDelegatesRatherThanYieldingTheGeneratorOnce() throws Exception {
+        String result = compressNoMunge("function* g(){ yield* other(); }");
+        assertTrue(result.contains("yield*"),
+                "'yield* x()' delegates to another generator; dropping the '*' makes it "
+                        + "'yield x()', which yields the generator object once instead: " + result);
+    }
+
+    @Test
+    void plainYieldStillHasNoStar() throws Exception {
+        String result = compressNoMunge("function* g(){ yield other(); }");
+        assertFalse(result.contains("yield*"), "a plain (non-delegating) yield must not gain a '*': " + result);
+        assertTrue(result.contains("yield "), "a plain yield with an operand still needs its value: " + result);
+    }
+
+    @Test
+    void labeledStatementDoesNotCrashTheCompressor() throws Exception {
+        String result = compressNoMunge("outer: for (var i=0;i<3;i++) { break outer; }");
+        assertTrue(result.contains("outer:"), "the label must survive: " + result);
+        assertTrue(result.contains("break outer"), "'break' must keep its label: " + result);
+    }
+
+    @Test
+    void addOperatorDoesNotMergeWithUnaryPlusOperand() throws Exception {
+        String result = compressNoMunge("var t1 = a + +b;");
+        assertEquals("var t1=a+ +b;", result,
+                "'a++b' is a SyntaxError - a separating space must keep the '+' operator "
+                        + "apart from the unary '+' operand: " + result);
+    }
+
+    @Test
+    void subOperatorDoesNotMergeWithUnaryMinusOperand() throws Exception {
+        String result = compressNoMunge("var t2 = a - -b;");
+        assertEquals("var t2=a- -b;", result,
+                "'a--b' is a SyntaxError - a separating space must keep the '-' operator "
+                        + "apart from the unary '-' operand: " + result);
+    }
+
+    @Test
+    void addOperatorDoesNotMergeWithUnaryPlusBeforeNewExpression() throws Exception {
+        String result = compressNoMunge("var t3 = start + +new Date();");
+        assertEquals("var t3=start+ +new Date();", result,
+                "'start++new Date()' is a SyntaxError - 'start + +new Date()' is a common "
+                        + "real-world idiom that must round-trip: " + result);
+    }
+
+    @Test
+    void divisionOperatorDoesNotMergeWithFollowingRegexIntoALineComment() throws Exception {
+        String result = compressNoMunge("var y = x / /re/.test(\"re\") ? 1 : 2;");
+        assertEquals("var y=x/ /re/.test(\"re\")?1:2;", result,
+                "'x//re/...' turns the rest of the statement into a line comment - this "
+                        + "passes 'node --check' (the output still parses) while silently "
+                        + "discarding the ternary: " + result);
     }
 }

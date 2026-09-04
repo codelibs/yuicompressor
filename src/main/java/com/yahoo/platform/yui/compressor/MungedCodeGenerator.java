@@ -109,7 +109,15 @@ public class MungedCodeGenerator {
             // Statements
             case Token.EXPR_RESULT:
             case Token.EXPR_VOID:
-                visitExpressionStatement((ExpressionStatement) node);
+                // LabeledStatement.getType() also reports Token.EXPR_VOID (see
+                // its class comment) rather than Token.LABEL, so it lands here
+                // rather than in a dedicated LABEL case; without this check it
+                // would be miscast to ExpressionStatement below.
+                if (node instanceof LabeledStatement) {
+                    visitLabeledStatement((LabeledStatement) node);
+                } else {
+                    visitExpressionStatement((ExpressionStatement) node);
+                }
                 break;
             case Token.RETURN:
                 visitReturnStatement((ReturnStatement) node);
@@ -152,9 +160,15 @@ public class MungedCodeGenerator {
             case Token.EMPTY:
                 // Empty statement, nothing to output
                 break;
-            case Token.LABEL:
-                visitLabeledStatement((LabeledStatement) node);
-                break;
+            // No "case Token.LABEL:" here: Label (the per-name marker inside a
+            // LabeledStatement's label list) is the only AST node that actually
+            // reports Token.LABEL, and it is never dispatched through
+            // visitNode() - visitLabeledStatement() below reads
+            // labeled.getLabels() directly. A LabeledStatement itself reports
+            // Token.EXPR_VOID (handled above), never Token.LABEL. A case here
+            // casting to LabeledStatement was therefore both unreachable and
+            // wrong (a real Token.LABEL node cannot be cast to
+            // LabeledStatement); removed rather than left as dead code.
             case Token.WITH:
                 visitWithStatement((WithStatement) node);
                 break;
@@ -405,6 +419,11 @@ public class MungedCodeGenerator {
 
             // Spread and yield
             case Token.YIELD:
+            case Token.YIELD_STAR:
+                // Yield's constructor sets its own type to Token.YIELD_STAR
+                // (not Token.YIELD) for "yield* x" - see visitYield(), which
+                // reads the node's actual type back off to decide whether to
+                // print the "*".
                 visitYield((Yield) node);
                 break;
 
@@ -931,19 +950,70 @@ public class MungedCodeGenerator {
 
         output.append(operator);
 
+        int mark = output.length();
         if (needsRightParen) output.append("(");
         visitNode(right);
         if (needsRightParen) output.append(")");
+        insertSeparatorIfMerging(mark, operator);
     }
 
     private void visitUnaryExpression(UnaryExpression expr, String operator) {
         output.append(operator);
+        int mark = output.length();
         AstNode operand = expr.getOperand();
         boolean needsParen = operand instanceof InfixExpression ||
                             operand instanceof ConditionalExpression;
         if (needsParen) output.append("(");
         visitNode(operand);
         if (needsParen) output.append(")");
+        insertSeparatorIfMerging(mark, operator);
+    }
+
+    /**
+     * Inserts a single space at {@code mark} if the character the operand
+     * placed there would combine with {@code operator}'s last character into
+     * a different token than the two are meant to be, e.g.:
+     * <ul>
+     * <li>"+" immediately before a unary "+" or prefix "++" operand reads as
+     * the increment operator: "a+" + "+b" -> "a++b" (a SyntaxError, not
+     * "a + (+b)").
+     * <li>"-" immediately before a unary "-" or prefix "--" operand reads as
+     * the decrement operator the same way.
+     * <li>"/" immediately before a "/" (a regex literal's opening delimiter)
+     * opens a line comment that silently swallows the rest of the line.
+     * <li>"/" immediately before a "*" would open a block comment.
+     * </ul>
+     * Checking the actual rendered character (rather than the operand's node
+     * type) covers unary "+"/"-", prefix "++"/"--" and regex literals alike
+     * with one rule, and never fires for a merely-adjacent-looking pair that
+     * the lexer would not actually misread (e.g. "*" immediately before "/",
+     * or a left operand ending in "/" or "+"/"-" - see the task report for
+     * the merging pairs considered and why only these four are hazards here).
+     */
+    private void insertSeparatorIfMerging(int mark, String operator) {
+        if (output.length() <= mark || operator.isEmpty()) {
+            return;
+        }
+        char operatorLastChar = operator.charAt(operator.length() - 1);
+        char operandFirstChar = output.charAt(mark);
+        boolean merges;
+        switch (operatorLastChar) {
+            case '+':
+                merges = operandFirstChar == '+';
+                break;
+            case '-':
+                merges = operandFirstChar == '-';
+                break;
+            case '/':
+                merges = operandFirstChar == '/' || operandFirstChar == '*';
+                break;
+            default:
+                merges = false;
+                break;
+        }
+        if (merges) {
+            output.insert(mark, ' ');
+        }
     }
 
     private void visitKeywordUnary(UnaryExpression expr, String keyword) {
@@ -1127,15 +1197,13 @@ public class MungedCodeGenerator {
     }
 
     private void visitYield(Yield yield) {
+        output.append(yield.getType() == Token.YIELD_STAR ? "yield*" : "yield");
         AstNode value = yield.getValue();
         if (value != null) {
-            output.append("yield");
             if (needsSpaceBeforeExpression(value)) {
                 output.append(" ");
             }
             visitNode(value);
-        } else {
-            output.append("yield");
         }
     }
 
