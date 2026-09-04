@@ -601,4 +601,53 @@ class ModernCssTest {
         // Control: the pass is doing its actual job, and must keep doing it.
         assertEquals("a{width:calc(100% - 10px)}b{color:red}", compress("a{width:calc(100%-10px)}b{color:#ff0000}"));
     }
+
+    @Test
+    void commentsAfterAMalformedTokenAreNotCollected_acceptedRegressionR33() throws Exception {
+        // ACCEPTED REGRESSION, not pre-existing. The structural scanner stops
+        // understanding the document at an unterminated string or an unclosed url(,
+        // and simply stops collecting from there, so later comments are emitted
+        // instead of stripped. The old context-free scan did strip them - measured at
+        // the release base 070bdd7, each of the four below loses its "/* n */" - but
+        // it stripped them by not knowing where it was, which is the same blindness
+        // that truncated whole stylesheets. Leaking a comment on malformed input is
+        // the price, and it is a leak: nothing is deleted or rewritten.
+        //
+        // Every input here is invalid CSS. If one of these starts stripping again,
+        // check what else changed with it.
+
+        // Unclosed url(.
+        assertEquals("a{background:url(x}/* n */b{color:red}",
+                compress("a{background:url(x}/* n */b{color:#ff0000}"));
+
+        // Unterminated string (R33 as filed).
+        assertEquals("a{content:\"oops}b{color:red}/* n */c{margin:0}",
+                compress("a{content:\"oops}b{color:#ff0000}/* n */c{margin:0px}"));
+
+        // Same, closed by a newline. Per CSS Syntax L3 4.3.5 a newline ends the string
+        // as a bad-string, so this one is "less malformed" than the case above, but
+        // skipString runs past it and the outcome is identical.
+        assertEquals("a{content:\"oops}b{color:red}/* n */c{margin:0}",
+                compress("a{content:\"oops\n}\nb{color:#ff0000}\n/* n */\nc{margin:0px}"));
+
+        // Stray quote inside an unquoted url(), which is a bad-url per 4.3.14. The
+        // scanner steps over the quoted span deliberately - see skipUrlToken - because
+        // the alternative deletes URL bytes.
+        assertEquals("a{background:url(/x/y'.png)}/* n */b{color:red}",
+                compress("a{background:url(/x/y'.png)}/* n */b{color:#ff0000}"));
+    }
+
+    @Test
+    void anUnquotedUrlSpellingNameValueIsRewritten_knownDefectR32() throws Exception {
+        // PRE-EXISTING, byte-identical at the release base 070bdd7, and deferred by
+        // ruling R32. Unquoted URLs are only preserved when they are data:, so one
+        // whose contents happen to spell a declaration reaches the value optimisers
+        // and has its value rewritten - "0px" becomes "0" inside the URL.
+        assertEquals("a{background:url(/x/*!k*/--y:0)}b{color:red}",
+                compress("a{background:url(/x/*!k*/--y:0px)}b{color:#ff0000}"));
+
+        // Why it was deferred rather than fixed: realistic URLs do not reach it.
+        assertEquals("a{background:url(/img/0px-spacer.png)}b{color:red}",
+                compress("a{background:url(/img/0px-spacer.png)}b{color:#ff0000}"));
+    }
 }
