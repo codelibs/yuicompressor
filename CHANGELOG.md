@@ -29,10 +29,34 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   from an unclosed `/*` to end-of-input with an internal placeholder that nothing removed, so the
   output was cut short, the following rules were lost, internal scaffolding was emitted into
   shippable CSS, and the exit code was 0. `a{content:"/*"}` - valid CSS - was enough to trigger it,
-  as was a data URL carrying an unclosed `/*`. Both are now handled structurally. A comment that is
-  genuinely unterminated outside any string or URL is rejected with an error naming the offset:
-  browsers consume such a comment to end-of-input, so the stylesheet is already broken either way,
-  and silently discarding the rest of the file is the behaviour this release exists to remove
+  as was a data URL carrying an unclosed `/*`. Both are now handled structurally. A `/*` that has
+  no `*/` after it anywhere, and that sits outside any string and outside any *unquoted* `url()`,
+  is rejected with an error naming the offset: browsers consume such a comment to end-of-input, so
+  the stylesheet is already broken either way, and silently discarding the rest of the file is the
+  behaviour this release exists to remove. Inside a quoted `url()` a comment is an ordinary
+  comment, so `url("x" /* oops)` reaches that error too
+- **A comment inside a quoted `url()` no longer corrupts the stylesheet.** Fixing the item above
+  introduced its own context-free scan: every `url(` was treated as a raw url-token and scanned for
+  the first `)`, which is only correct for the unquoted form. Per CSS Syntax Level 3 §4.3.4, `url(`
+  followed by a quote is an ordinary function token whose contents are ordinary tokens, comments
+  included. `url("a.png" /* legacy: url(b.png) /* keep */)` desynced the scan, which then deleted
+  the only `*/` in the file and shipped an unterminated `/*` with exit code 0 - so a browser
+  discarded every rule that followed. The same desync made the unterminated-comment error fire on
+  valid stylesheets such as `a{background:url("x" /* ) " */)}b{content:"/*"}`, and left ordinary
+  comments inside quoted `url()`s in the output. Only the unquoted form is scanned raw now
+- A comment inside `calc()`, `progid:…Matrix()` or a `data:` URL no longer leaks internal
+  scaffolding into the output. Those spans are captured whole and restored at the very end, after
+  the pass that resolves comment markers, so the marker itself was emitted: valid CSS
+  `a{width:calc(100% /* n */ - 10px)}` came out as
+  `a{width:calc(100% / *___YUICSSMIN_PRESERVE_CANDIDATE_COMMENT_0___ * / - 10px)}` with exit code
+  0 - the calc respacer reads the marker's own `/*` and `*/` as division and multiplication. The
+  markers are now settled where the spans are captured, keeping `/*!` comments and dropping the
+  rest, exactly as elsewhere
+- `--line-break` no longer inserts a newline inside a string literal. The pass tracked string state
+  but not comments, so one unpaired quote in a preserved `/*! … */` banner inverted the tracking
+  for the rest of the file; a newline in a CSS string is a parse error, so the declaration it broke
+  was dropped. With an apostrophe instead, the tracker stuck "inside a string" and suppressed every
+  later linebreak - the harmless half of the same fault
 - At-rules and declarations are now only recognised where one can actually begin - after `}`,
   `;`, `{`, a preserved-token placeholder, or the start of the stylesheet. Matching their literal
   text anywhere it appeared meant `a { background: url(/img/@property.png) }` was treated as an
@@ -191,7 +215,7 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green
-- Test suite grew from 163 to 503 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+- Test suite grew from 163 to 513 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
   parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,

@@ -415,15 +415,30 @@ public class CssCompressor {
      * </ul>
      *
      * <p>Both are fixed at the root by scanning structurally: strings and
-     * {@code url()} tokens are stepped over, so their contents can never be
-     * mistaken for a comment.
+     * unquoted {@code url()} tokens are stepped over, so their contents can
+     * never be mistaken for a comment. A <em>quoted</em> {@code url()} is not
+     * stepped over, because it is not a url-token: see {@link #startsUrlToken}.
      *
-     * <p>An unterminated comment outside a string or URL throws. Browsers
-     * consume such a comment to end-of-input, so the stylesheet is already
-     * broken for the author either way; reproducing that here would mean a
-     * minifier silently discarding the rest of the file with a success exit
-     * code, which is indistinguishable from the corruption this pass exists to
-     * stop. Failing loudly on malformed input is the deliberate trade.
+     * <p>The exact condition for the throw, rather than a summary of it: a
+     * {@code "/*"} reaches this test when it is not inside a string and not
+     * inside an unquoted {@code url()} token, and it throws when no
+     * {@code "*}{@code /"} follows it anywhere in the input. Inside a quoted
+     * {@code url()} it therefore does reach the test - deliberately, since a
+     * comment there is an ordinary comment - so an input like
+     * {@code url("x" /}{@code * oops)} fails rather than shipping an
+     * unterminated opener.
+     *
+     * <p>Failing loudly is the trade. Browsers consume such a comment to
+     * end-of-input, so the stylesheet is already broken for the author either
+     * way; reproducing that here would mean a minifier silently discarding the
+     * rest of the file with a success exit code, which is indistinguishable
+     * from the corruption this pass exists to stop.
+     *
+     * <p>What the throw does <em>not</em> cover, because the scan stops
+     * looking: after an unterminated string, or an unclosed {@code url(},
+     * nothing further is collected, so later comments are emitted rather than
+     * stripped. Both inputs are malformed CSS and the result is a leak rather
+     * than corruption, which is the safe direction to fail in.
      */
     private String collectComments(String css, ArrayList comments) {
         StringBuilder out = new StringBuilder(css.length());
