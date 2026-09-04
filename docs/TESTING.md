@@ -130,13 +130,26 @@ suite.add(new YUITest.TestCase({
 
 ### Known Failing Tests
 
-Files with `.FAIL` extension are known failing tests that document issues:
-- `hsla-issue81.css.FAIL`
-- `issue71.js.FAIL`
-- `issue172.css.FAIL`
-- `rgb-issue81.css.FAIL`
+A fixture is disabled by renaming its SOURCE to `.FAIL`; the `.min` golden
+keeps its ordinary name. The `.min` file therefore looks orphaned to a plain
+directory listing, but is not - `suite.sh` pairs `blah.css.FAIL` with
+`blah.css.min`, and the Java golden tests skip the pair because their glob only
+matches `*.css` / `*.js`. Do not delete a `.min` file whose source is present
+under a `.FAIL` name.
 
-These tests:
+Currently disabled:
+- `hsla-issue81.css.FAIL` — expects `hsla(27, 0%, 50%, 1)` to collapse to
+  `hsl(27,0%,50%)`; current output is `hsla(27,0,50%,1)`
+- `issue172.css.FAIL` — expects `transform-origin: 0` to stay `0`; current
+  output expands it to `0 0`
+- `rgb-issue81.css.FAIL` — a malformed declaration (`color: color: rgb(...)`);
+  the golden keeps the inner spaces, current output strips them
+
+`issue71.js` is no longer in this list: it passes as of the Release 1 fix wave,
+so its `.FAIL` suffix was removed as `suite.sh` instructs ("Test passed, please
+remove the '.FAIL' from the filename").
+
+These fixtures:
 - Document known bugs
 - Prevent regressions
 - Show expected behavior once fixed

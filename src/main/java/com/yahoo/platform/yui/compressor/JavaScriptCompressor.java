@@ -266,7 +266,21 @@ public class JavaScriptCompressor {
         }
     }
 
-    // 6-parameter version (for backward compatibility)
+    /**
+     * 6-parameter version (for backward compatibility). Delegates to the
+     * 8-parameter version below; see its javadoc for which parameters are
+     * currently ignored.
+     *
+     * @param out the writer to receive the compressed output
+     * @param linebreakpos target maximum line length; 0 or less inserts no
+     *        line breaks (the "0 breaks after every semi-colon" behaviour the
+     *        README used to describe has never been implemented)
+     * @param munge whether to rename local symbols
+     * @param verbose <b>currently ignored.</b> Never read
+     * @param preserveAllSemiColons <b>currently ignored.</b> Never read; the
+     *        generator emits only the semicolons the syntax requires either way
+     * @param disableOptimizations <b>currently ignored.</b> Never read
+     */
     public void compress(Writer out, int linebreakpos,
                         boolean munge, boolean verbose,
                         boolean preserveAllSemiColons, boolean disableOptimizations)
@@ -275,7 +289,37 @@ public class JavaScriptCompressor {
                 preserveAllSemiColons, disableOptimizations, false);
     }
 
-    // 8-parameter version (main implementation)
+    /**
+     * 8-parameter version (main implementation).
+     *
+     * <p>Four of these parameters are accepted and never read. They are kept
+     * because the signature is public API that a downstream maven plugin calls
+     * directly, and because dropping them would silently change which overload
+     * a caller binds to. Implementing the behaviour they promise is Release 2
+     * work; documenting the gap is the Release 1 fix, so that a caller passing
+     * {@code preserveAllSemiColons=true} is not left believing it took effect.
+     *
+     * @param out the writer to receive the compressed output
+     * @param mungemap if non-null and {@code munge} is true, receives the
+     *        original-to-munged symbol mapping
+     * @param linebreakpos target maximum line length; 0 or less inserts no
+     *        line breaks. Breaks land only between statements, never inside a
+     *        token, so a statement longer than this is left on one line
+     * @param munge whether to rename local symbols
+     * @param verbose <b>currently ignored.</b> Never read; no informational
+     *        messages are emitted regardless
+     * @param preserveAllSemiColons <b>currently ignored.</b> Never read. The
+     *        README documents this as {@code --preserve-semi}; it has no
+     *        effect. The generator emits only the semicolons the syntax
+     *        requires, and removing the ones it does emit before a "}" is a
+     *        separate optimisation this version does not perform either
+     * @param disableOptimizations <b>currently ignored.</b> Never read. The
+     *        README documents this as {@code --disable-optimizations}; it has
+     *        no effect
+     * @param preserveUnknownHints <b>currently ignored.</b> Never read.
+     *        {@code "name:nomunge"} hints are neither honoured nor stripped -
+     *        see the {@code _munge.js} entry in JsGoldenFileTest's quarantine
+     */
     public void compress(Writer out, Writer mungemap, int linebreakpos,
                         boolean munge, boolean verbose,
                         boolean preserveAllSemiColons, boolean disableOptimizations,

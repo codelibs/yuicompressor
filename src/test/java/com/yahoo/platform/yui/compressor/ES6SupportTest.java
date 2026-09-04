@@ -372,18 +372,27 @@ public class ES6SupportTest {
         assertNotNull(ast, "Should parse spread operator");
     }
 
+    // These two used to call parseSource() and assert assertNotNull(ast) -
+    // they never invoked the compressor, but sat in a class named
+    // ES6SupportTest among tests that do, so the file read as evidence that
+    // default and rest parameters were supported. They were not: the
+    // generator dropped "= 1" and "..." silently, changing what the function
+    // did. Now that it reconstructs them, these can assert what their names
+    // imply. See ParameterListTest for the full round-trip table.
+
     @Test
-    public void testParseDefaultParams() throws Exception {
-        String source = "function foo(x = 1, y = 2) { return x + y; }";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse default parameters");
+    public void testDefaultParamsSurviveCompression() throws Exception {
+        String result = compress("function foo(x = 1, y = 2) { return x + y; }", false);
+        assertEquals("function foo(x=1,y=2){return x+y;}", result.trim(),
+                "dropping the defaults changes foo() from 3 to NaN: " + result);
     }
 
     @Test
-    public void testParseRestParams() throws Exception {
-        String source = "function foo(...args) { return args.length; }";
-        AstRoot ast = parseSource(source);
-        assertNotNull(ast, "Should parse rest parameters");
+    public void testRestParamsSurviveCompression() throws Exception {
+        String result = compress("function foo(...args) { return args.length; }", false);
+        assertEquals("function foo(...args){return args.length;}", result.trim(),
+                "dropping the '...' turns an array of the trailing arguments into a "
+                        + "single positional parameter: " + result);
     }
 
     // ===== Getter/Setter Tests =====

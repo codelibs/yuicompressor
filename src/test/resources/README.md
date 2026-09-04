@@ -15,7 +15,11 @@ That's all! The test framework will automatically discover and run these tests.
 
 - **CSS files**: Test CSS compression features
 - **JS files**: Test JavaScript compression features
-- **`.FAIL` files**: Known failing tests that document issues
+- **`.FAIL` files**: A disabled fixture. Only the SOURCE is renamed
+  (`blah.css` becomes `blah.css.FAIL`); its `blah.css.min` golden keeps its
+  ordinary name, so it looks orphaned in a directory listing but is not. Do
+  not delete a `.min` whose source is present under a `.FAIL` name. When one
+  starts passing, drop the suffix — `suite.sh` says so too.
 
 ## Test Scripts
 
