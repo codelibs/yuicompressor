@@ -127,6 +127,16 @@ public class CssCompressor {
                 break;
             }
             int start = m.start();
+            if (!startsAtBoundary(css, start, AT_RULE_BOUNDARIES)) {
+                // The text "@property" inside a value - url(/img/@property.png)
+                // is the case that was reported - is not an at-rule. Treating it
+                // as one preserved everything from there to the next balanced
+                // "}" verbatim, which silently left the FOLLOWING rule entirely
+                // unminified. Copy it through and keep looking.
+                sb.append(css, i, m.end());
+                i = m.end();
+                continue;
+            }
             int brace = css.indexOf('{', m.end());
             if (brace < 0) {
                 sb.append(css, i, len);
@@ -175,13 +185,11 @@ public class CssCompressor {
                 sb.append(css, i, len);
                 break;
             }
-            // A declaration starts after '{' or ';', which distinguishes a custom
-            // property from a '--' appearing inside a value such as calc(a --b).
-            int before = start - 1;
-            while (before >= 0 && Character.isWhitespace(css.charAt(before))) {
-                before--;
-            }
-            if (before < 0 || (css.charAt(before) != '{' && css.charAt(before) != ';')) {
+            // A declaration starts after '{' or ';' (or a preserved-token
+            // placeholder standing in for a comment that precedes it), which
+            // distinguishes a custom property from a '--' appearing inside a
+            // value such as calc(a --b).
+            if (!startsAtBoundary(css, start, DECLARATION_BOUNDARIES)) {
                 sb.append(css, i, start + 2);
                 i = start + 2;
                 continue;
@@ -228,7 +236,82 @@ public class CssCompressor {
         return sb.toString();
     }
 
+    private static final String PRESERVED_TOKEN_PREFIX = "___YUICSSMIN_PRESERVED_TOKEN_";
+
     private static final Pattern PRESERVED_TOKEN_REFERENCE = Pattern.compile("___YUICSSMIN_PRESERVED_TOKEN_(\\d+)___");
+
+    /** Characters an at-rule can legitimately follow. */
+    private static final String AT_RULE_BOUNDARIES = "{};";
+
+    /** Characters a declaration can legitimately follow. */
+    private static final String DECLARATION_BOUNDARIES = "{;";
+
+    /**
+     * Whether the construct starting at {@code start} begins somewhere it
+     * legitimately can: at the start of the stylesheet, immediately after one
+     * of {@code boundaries}, or immediately after a preserved-token
+     * placeholder. Whitespace in between is skipped.
+     *
+     * <p>Matching one of these shapes context-free - anywhere its literal text
+     * happens to appear - is a defect class this file has hit more than once.
+     * The comment matcher used to fire inside a string; "@property" fires
+     * inside {@code url(/img/@property.png)} and swallows the following rule
+     * with it; the at-directive lowercasing pass rewrites
+     * {@code url(/img/@MEDIA.png)} to {@code @media} even though URL paths are
+     * case-sensitive. Requiring a real boundary closes all of them the same
+     * way, which is why this is one shared helper rather than a check repeated
+     * per matcher.
+     *
+     * <p>The preserved-token case is not optional. By the time these passes
+     * run, a leading comment or string is already a placeholder, so a custom
+     * property declaration or an at-rule written directly after a preserved
+     * "/*!" banner is preceded by that placeholder rather than by "{" or "}".
+     * Omitting it is exactly how custom property values stopped being
+     * preserved when a preserved token preceded them.
+     */
+    private static boolean startsAtBoundary(String css, int start, String boundaries) {
+        int before = start - 1;
+        while (before >= 0 && Character.isWhitespace(css.charAt(before))) {
+            before--;
+        }
+        if (before < 0) {
+            return true;
+        }
+        return boundaries.indexOf(css.charAt(before)) >= 0 || endsWithPreservedToken(css, before + 1);
+    }
+
+    /**
+     * Whether a complete "___YUICSSMIN_PRESERVED_TOKEN_n___" placeholder ends
+     * exactly at {@code endExclusive}. Checked structurally (trailing "___",
+     * then at least one index digit, then the prefix) rather than with a
+     * backwards regex, so a stylesheet that merely contains the prefix as
+     * literal text cannot be mistaken for one.
+     *
+     * <p>Preservation leaves the placeholder's delimiters in place: a preserved
+     * comment reads "/*" + placeholder + "*" + "/" and a preserved string keeps
+     * its quotes, so the closing delimiter is stepped over first.
+     */
+    private static boolean endsWithPreservedToken(String css, int endExclusive) {
+        int i = endExclusive;
+        if (i >= 2 && css.startsWith("*/", i - 2)) {
+            i -= 2;
+        } else if (i >= 1 && (css.charAt(i - 1) == '"' || css.charAt(i - 1) == '\'')) {
+            i--;
+        }
+        if (i < 3 || !css.startsWith("___", i - 3)) {
+            return false;
+        }
+        i -= 3;
+        int digitsEnd = i;
+        while (i > 0 && Character.isDigit(css.charAt(i - 1))) {
+            i--;
+        }
+        if (i == digitsEnd) {
+            return false;
+        }
+        return i >= PRESERVED_TOKEN_PREFIX.length()
+                && css.startsWith(PRESERVED_TOKEN_PREFIX, i - PRESERVED_TOKEN_PREFIX.length());
+    }
 
     /**
      * Expands any placeholder already inserted by an earlier preservation step (a
@@ -421,10 +504,16 @@ public class CssCompressor {
         css = css.replaceAll("\\*/ ", "*/");
 
         // If there are multiple @charset directives, push them to the top of the file.
+        // Guarded by the same boundary rule as the other at-rule matchers: without
+        // it, the literal text "@charset \"y\";" inside an unpreserved url() is
+        // hoisted out of the URL and to the top of the stylesheet.
         sb = new StringBuffer();
         p = Pattern.compile("(?i)^(.*)(@charset)( \"[^\"]*\";)");
         m = p.matcher(css);
         while (m.find()) {
+            if (!startsAtBoundary(css, m.start(2), AT_RULE_BOUNDARIES)) {
+                continue;
+            }
             String s = m.group(1).replaceAll("\\\\", "\\\\\\\\").replaceAll("\\$", "\\\\\\$");
             m.appendReplacement(sb, m.group(2).toLowerCase() + m.group(3) + s);
         }
@@ -441,11 +530,17 @@ public class CssCompressor {
         m.appendTail(sb);
         css = sb.toString();
 
-        // lowercase some popular @directives (@charset is done right above)
+        // lowercase some popular @directives (@charset is done right above).
+        // Only where one can actually start: this pattern is otherwise
+        // context-free, and "url(/img/@MEDIA.png)" is a real URL path, which
+        // servers treat as case-sensitive. Same defect class as @property below.
         sb = new StringBuffer();
         p = Pattern.compile("(?i)@(font-face|import|(?:-(?:atsc|khtml|moz|ms|o|wap|webkit)-)?keyframe|media|page|namespace|supports|container|layer|property|scope|starting-style)");
         m = p.matcher(css);
         while (m.find()) {
+            if (!startsAtBoundary(css, m.start(), AT_RULE_BOUNDARIES)) {
+                continue;
+            }
             m.appendReplacement(sb, '@' + m.group(1).toLowerCase());
         }
         m.appendTail(sb);

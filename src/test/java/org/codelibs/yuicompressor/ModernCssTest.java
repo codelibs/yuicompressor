@@ -151,4 +151,73 @@ class ModernCssTest {
         // The <length> exemption does apply, so this optimisation must be kept.
         assertEquals("a{width:0;height:0}", compress("a { width: 0%; height: 0px; }"));
     }
+
+    // The at-rule and declaration matchers below all used to fire on their
+    // literal text wherever it appeared, with no regard for whether an at-rule
+    // or declaration could actually start there. Requiring a real boundary
+    // ("{", "}", ";", the start of the stylesheet, or a preserved-token
+    // placeholder) closes the whole class; each test names one instance.
+
+    @Test
+    void atPropertyTextInsideAUrlDoesNotDisableTheFollowingRule() throws Exception {
+        // "@property" was located context-free, so this match preserved
+        // everything up to the next balanced "}" verbatim - which meant the
+        // rule AFTER it was emitted completely unminified.
+        String result = compress("a { background: url(/img/@property.png) } b { color: #ff0000; margin: 0px }");
+        assertEquals("a{background:url(/img/@property.png)}b{color:red;margin:0}", result, result);
+    }
+
+    @Test
+    void atDirectiveTextInsideAUrlKeepsItsCase() throws Exception {
+        // The at-directive lowercasing pass was context-free too. URL paths are
+        // case-sensitive on essentially every server, so rewriting one is a
+        // broken stylesheet, not a smaller one.
+        String result = compress("a { background: url(/img/@MEDIA.png) } B { COLOR: #ff0000 }");
+        assertEquals("a{background:url(/img/@MEDIA.png)}B{COLOR:red}", result, result);
+    }
+
+    @Test
+    void atDirectiveAfterAPreservedCommentIsStillLowercased() throws Exception {
+        // The boundary check must not lose the legitimate case: after comment
+        // preservation an at-rule can be preceded by a placeholder rather than
+        // by "{", "}" or ";".
+        String result = compress("/*! keep */@MEDIA screen{b{color:#00ff00}}");
+        assertEquals("/*! keep */@media screen{b{color:#0f0}}", result, result);
+    }
+
+    @Test
+    void atCharsetTextInsideAUrlIsNotHoistedToTheTop() throws Exception {
+        String result = compress("a { background: url(/x/@charset \"y\";) } b{color:#ff0000}");
+        assertEquals("a{background:url(/x/@charset \"y\";)}b{color:red}", result, result);
+    }
+
+    @Test
+    void aRealAtCharsetIsStillHoistedAndLowercased() throws Exception {
+        assertEquals("@charset \"utf-8\";a{color:red}", compress("@charset \"utf-8\"; a { color: #ff0000 }"));
+    }
+
+    @Test
+    void customPropertyValueIsPreservedAfterAPreservedComment() throws Exception {
+        // The declaration matcher accepted only "{" or ";" as the preceding
+        // character, so a preserved "/*!" banner between the "{" and the
+        // declaration made the value ordinary again and the colour optimiser
+        // rewrote it.
+        String result = compress(":root{/*! v1 */--brand:#ff0000}");
+        assertEquals(":root{/*! v1 */--brand:#ff0000}", result, result);
+    }
+
+    @Test
+    void customPropertyUnitIsPreservedAfterAPreservedComment() throws Exception {
+        // The damaging half of the same defect: calc(var(--pad) + 1px) needs
+        // the unit, and "0" is not a length there.
+        String result = compress(":root{/*! x */--pad:0px}");
+        assertEquals(":root{/*! x */--pad:0px}", result, result);
+    }
+
+    @Test
+    void aDoubleDashInsideAValueIsStillNotTreatedAsACustomProperty() throws Exception {
+        // The boundary check must keep excluding this: "--2px" here is a value,
+        // not a declaration.
+        assertEquals("a{width:calc(1px - -2px)}", compress("a{width:calc(1px --2px)}"));
+    }
 }
