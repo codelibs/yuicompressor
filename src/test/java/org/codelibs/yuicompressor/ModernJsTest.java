@@ -111,4 +111,34 @@ class ModernJsTest {
         assertEquals("var v=a?.b().c;", result,
                 "the call and the trailing '.c' are not themselves optional: " + result);
     }
+
+    @Test
+    void templateLiteralContentIsUntouched() throws Exception {
+        String result = compress("var s = `a ${x} b`; f(s);");
+        assertTrue(result.contains("${x} b"),
+                "whitespace inside a template literal is string data: " + result);
+    }
+
+    @Test
+    void templateLiteralRunsOfSpacesArePreserved() throws Exception {
+        String result = compress("var t = `keep   spaces`; f(t);");
+        assertTrue(result.contains("keep   spaces"),
+                "runs of spaces inside a template literal must survive: " + result);
+    }
+
+    @Test
+    void regexLiteralContentIsUntouched() throws Exception {
+        String result = compress("var re = /^( a )+$/; f(re);");
+        assertTrue(result.contains("( a )"),
+                "removing the spaces changes what the regex matches: " + result);
+    }
+
+    @Test
+    void lineBreakNeverSplitsAnIdentifier() throws Exception {
+        StringWriter out = new StringWriter();
+        new JavaScriptCompressor(
+                new StringReader("var alpha=1; var beta=2; var gamma=alpha+beta; gamma++;"), SILENT)
+                .compress(out, 20, true, false, false, false);
+        assertTrue(out.toString().contains("beta"), "an identifier was split across lines: " + out);
+    }
 }

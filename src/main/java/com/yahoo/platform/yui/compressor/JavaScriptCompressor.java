@@ -291,39 +291,22 @@ public class JavaScriptCompressor {
                     this.globalScope.munge();
                 }
 
-                // Generate code with munged variable names
+                // Generate code with munged variable names. The generator emits only
+                // the separators the syntax genuinely requires, so its output is
+                // already minified; nothing here may run a regex over it, since that
+                // cannot tell generated syntax apart from string/template/regex
+                // literal contents.
                 MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge, this.sourceText);
                 compressed = generator.generate(this.ast);
 
-                // Extract string literals to protect them from whitespace compression
-                java.util.List<String> stringLiterals = new java.util.ArrayList<>();
-                compressed = extractStringLiterals(compressed, stringLiterals);
-
-                // Remove extra whitespace
-                compressed = compressed.replaceAll("\\s+", " ");
-                compressed = compressed.replaceAll(" \\{", "{");
-                compressed = compressed.replaceAll("\\{ ", "{");
-                compressed = compressed.replaceAll(" \\}", "}");
-                compressed = compressed.replaceAll("\\} ", "}");
-                compressed = compressed.replaceAll(" \\(", "(");
-                compressed = compressed.replaceAll("\\( ", "(");
-                compressed = compressed.replaceAll(" \\)", ")");
-                compressed = compressed.replaceAll("\\) ", ")");
-                compressed = compressed.replaceAll(" ;", ";");
-                compressed = compressed.replaceAll("; ", ";");
-                compressed = compressed.replaceAll(" ,", ",");
-                compressed = compressed.replaceAll(", ", ",");
-
-                // Restore string literals
-                compressed = restoreStringLiterals(compressed, stringLiterals);
+                // Add line breaks if requested, before comments are inserted so a
+                // preserved comment can never be split by one.
+                if (linebreakpos > 0) {
+                    compressed = addLineBreaks(compressed, generator.getSafeBreakOffsets(), linebreakpos);
+                }
 
                 // Insert preserved comments
                 compressed = commentPreserver.insertComments(compressed);
-
-                // Add line breaks if requested
-                if (linebreakpos > 0) {
-                    compressed = addLineBreaks(compressed, linebreakpos);
-                }
 
                 out.write(compressed);
 
@@ -340,89 +323,56 @@ public class JavaScriptCompressor {
         }
     }
 
-    private String addLineBreaks(String code, int linebreakpos) {
-        if (linebreakpos <= 0 || code.length() <= linebreakpos) {
+    /**
+     * Breaks {@code code} into lines no longer than {@code linebreakpos} where
+     * possible, inserting a newline only at one of {@code safeOffsets} - positions
+     * the generator recorded as falling between statements, never inside a
+     * string, template literal or regex literal. A statement longer than
+     * {@code linebreakpos} with no safe offset inside it is left on one line
+     * rather than cut at an arbitrary character position.
+     *
+     * @param code The generated JavaScript code
+     * @param safeOffsets Offsets into {@code code}, ascending, where a line break is safe
+     * @param linebreakpos Target maximum line length
+     * @return Code with line breaks inserted at safe offsets
+     */
+    private String addLineBreaks(String code, java.util.List<Integer> safeOffsets, int linebreakpos) {
+        if (linebreakpos <= 0 || code.length() <= linebreakpos
+                || safeOffsets == null || safeOffsets.isEmpty()) {
             return code;
         }
 
-        StringBuilder result = new StringBuilder();
-        int length = code.length();
-
-        for (int i = 0; i < length; i += linebreakpos) {
-            int end = Math.min(i + linebreakpos, length);
-            result.append(code, i, end);
-            if (end < length) {
-                result.append('\n');
-            }
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Extract string literals from the code and replace them with placeholders.
-     * This protects string contents from being modified by whitespace compression.
-     *
-     * @param code The JavaScript code
-     * @param stringLiterals List to store the extracted string literals
-     * @return Code with string literals replaced by placeholders
-     */
-    private String extractStringLiterals(String code, java.util.List<String> stringLiterals) {
-        StringBuilder result = new StringBuilder();
-        int length = code.length();
+        StringBuilder result = new StringBuilder(code.length() + code.length() / linebreakpos + 8);
+        int lineStart = 0;
         int i = 0;
+        int n = safeOffsets.size();
 
-        while (i < length) {
-            char c = code.charAt(i);
-
-            // Check for string literal (single or double quote)
-            if (c == '"' || c == '\'') {
-                char quoteChar = c;
-                StringBuilder literal = new StringBuilder();
-                literal.append(c);
-                i++;
-
-                // Find the end of the string literal, handling escapes
-                boolean escaped = false;
-                while (i < length) {
-                    char ch = code.charAt(i);
-                    literal.append(ch);
-
-                    if (escaped) {
-                        escaped = false;
-                    } else if (ch == '\\') {
-                        escaped = true;
-                    } else if (ch == quoteChar) {
-                        i++;
-                        break;
-                    }
+        while (i < n) {
+            int chosen = -1;
+            while (i < n) {
+                int offset = safeOffsets.get(i);
+                if (offset <= lineStart || offset >= code.length()) {
                     i++;
+                    continue;
                 }
-
-                // Store the literal and add a placeholder
-                stringLiterals.add(literal.toString());
-                result.append("___STRING_LITERAL_" + (stringLiterals.size() - 1) + "___");
-            } else {
-                result.append(c);
+                if (offset - lineStart > linebreakpos && chosen != -1) {
+                    // This offset would make the line too long and we already
+                    // have a shorter candidate; break there and reconsider this
+                    // offset for the next line.
+                    break;
+                }
+                chosen = offset;
                 i++;
             }
+            if (chosen == -1) {
+                break;
+            }
+            result.append(code, lineStart, chosen);
+            result.append('\n');
+            lineStart = chosen;
         }
 
+        result.append(code, lineStart, code.length());
         return result.toString();
-    }
-
-    /**
-     * Restore string literals that were replaced with placeholders.
-     *
-     * @param code Code with placeholders
-     * @param stringLiterals List of extracted string literals
-     * @return Code with string literals restored
-     */
-    private String restoreStringLiterals(String code, java.util.List<String> stringLiterals) {
-        String result = code;
-        for (int i = 0; i < stringLiterals.size(); i++) {
-            result = result.replace("___STRING_LITERAL_" + i + "___", stringLiterals.get(i));
-        }
-        return result;
     }
 }

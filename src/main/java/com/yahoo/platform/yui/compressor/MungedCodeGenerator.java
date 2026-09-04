@@ -22,6 +22,15 @@ public class MungedCodeGenerator {
     private ScopeBuilder scopeBuilder;
     private boolean munge;
     private StringBuilder output;
+    // Offsets into "output" where a line break may be safely inserted: right
+    // after a top-level statement in a script/block/scope body, or right after
+    // a statement inside a switch case, has finished (its trailing ";" already
+    // appended when one is needed, or its closing "}" already written). Never
+    // recorded inside a string, template literal or regex literal, since those
+    // are always emitted as a single atomic append. addLineBreaks() in
+    // JavaScriptCompressor breaks only at these offsets, so a line break can
+    // never land inside a token.
+    private List<Integer> safeBreakOffsets;
     // The original source text. Rhino's QUESTION_DOT type marks every link of an
     // optional chain (e.g. both accesses in "a?.b.c"), not just the one that is
     // actually optional, and FunctionCall.isOptionalCall() over-reports the same
@@ -41,12 +50,26 @@ public class MungedCodeGenerator {
         this.munge = munge;
         this.source = source;
         this.output = new StringBuilder();
+        this.safeBreakOffsets = new ArrayList<>();
     }
 
     public String generate(AstRoot root) {
         output.setLength(0);
+        safeBreakOffsets.clear();
         visitNode(root);
         return output.toString();
+    }
+
+    /**
+     * Offsets into the string returned by {@link #generate}, in ascending
+     * order, where a line break may be inserted without splitting a token.
+     */
+    public List<Integer> getSafeBreakOffsets() {
+        return safeBreakOffsets;
+    }
+
+    private void markSafeBreak() {
+        safeBreakOffsets.add(output.length());
     }
 
     private void visitNode(AstNode node) {
@@ -291,13 +314,13 @@ public class MungedCodeGenerator {
                 visitUnaryExpression((UnaryExpression) node, "-");
                 break;
             case Token.TYPEOF:
-                visitKeywordUnary((UnaryExpression) node, "typeof ");
+                visitKeywordUnary((UnaryExpression) node, "typeof");
                 break;
             case Token.VOID:
-                visitKeywordUnary((UnaryExpression) node, "void ");
+                visitKeywordUnary((UnaryExpression) node, "void");
                 break;
             case Token.DELPROP:
-                visitKeywordUnary((UnaryExpression) node, "delete ");
+                visitKeywordUnary((UnaryExpression) node, "delete");
                 break;
 
             // Increment/Decrement
@@ -403,6 +426,7 @@ public class MungedCodeGenerator {
                 if (needsSemicolon((AstNode) child)) {
                     output.append(";");
                 }
+                markSafeBreak();
             }
         }
     }
@@ -555,7 +579,9 @@ public class MungedCodeGenerator {
         output.append("return");
         AstNode value = ret.getReturnValue();
         if (value != null) {
-            output.append(" ");
+            if (needsSpaceBeforeExpression(value)) {
+                output.append(" ");
+            }
             visitNode(value);
         }
     }
@@ -680,6 +706,7 @@ public class MungedCodeGenerator {
         }
 
         output.append("}");
+        markSafeBreak();
     }
 
     private void visitSwitchCase(SwitchCase caseNode) {
@@ -687,7 +714,10 @@ public class MungedCodeGenerator {
         if (expression == null) {
             output.append("default:");
         } else {
-            output.append("case ");
+            output.append("case");
+            if (needsSpaceBeforeExpression(expression)) {
+                output.append(" ");
+            }
             visitNode(expression);
             output.append(":");
         }
@@ -699,6 +729,7 @@ public class MungedCodeGenerator {
                 if (needsSemicolon(stmt)) {
                     output.append(";");
                 }
+                markSafeBreak();
             }
         }
     }
@@ -722,8 +753,12 @@ public class MungedCodeGenerator {
     }
 
     private void visitThrowStatement(ThrowStatement throwStmt) {
-        output.append("throw ");
-        visitNode(throwStmt.getExpression());
+        output.append("throw");
+        AstNode expression = throwStmt.getExpression();
+        if (needsSpaceBeforeExpression(expression)) {
+            output.append(" ");
+        }
+        visitNode(expression);
     }
 
     private void visitTryStatement(TryStatement tryStmt) {
@@ -774,9 +809,11 @@ public class MungedCodeGenerator {
                 if (needsSemicolon((AstNode) child)) {
                     output.append(";");
                 }
+                markSafeBreak();
             }
         }
         output.append("}");
+        markSafeBreak();
     }
 
     private void visitScope(Scope scope) {
@@ -787,9 +824,11 @@ public class MungedCodeGenerator {
                 if (needsSemicolon((AstNode) child)) {
                     output.append(";");
                 }
+                markSafeBreak();
             }
         }
         output.append("}");
+        markSafeBreak();
     }
 
     private void visitStringLiteral(StringLiteral str) {
@@ -909,7 +948,11 @@ public class MungedCodeGenerator {
 
     private void visitKeywordUnary(UnaryExpression expr, String keyword) {
         output.append(keyword);
-        visitNode(expr.getOperand());
+        AstNode operand = expr.getOperand();
+        if (needsSpaceBeforeExpression(operand)) {
+            output.append(" ");
+        }
+        visitNode(operand);
     }
 
     private void visitUpdateExpression(UpdateExpression expr) {
@@ -956,8 +999,12 @@ public class MungedCodeGenerator {
     }
 
     private void visitNewExpression(NewExpression newExpr) {
-        output.append("new ");
-        visitNode(newExpr.getTarget());
+        output.append("new");
+        AstNode target = newExpr.getTarget();
+        if (needsSpaceBeforeExpression(target)) {
+            output.append(" ");
+        }
+        visitNode(target);
 
         List<AstNode> args = newExpr.getArguments();
         if (args != null && !args.isEmpty()) {
@@ -1080,9 +1127,13 @@ public class MungedCodeGenerator {
     }
 
     private void visitYield(Yield yield) {
-        if (yield.getValue() != null) {
-            output.append("yield ");
-            visitNode(yield.getValue());
+        AstNode value = yield.getValue();
+        if (value != null) {
+            output.append("yield");
+            if (needsSpaceBeforeExpression(value)) {
+                output.append(" ");
+            }
+            visitNode(value);
         } else {
             output.append("yield");
         }
@@ -1100,6 +1151,31 @@ public class MungedCodeGenerator {
                type != Token.TRY &&
                type != Token.WITH &&
                type != Token.LABEL;
+    }
+
+    /**
+     * Whether a word keyword ("return", "throw", "new", "typeof", "void",
+     * "delete", "yield", "case") needs a space before the expression that
+     * follows it, to keep the two from merging into a single identifier
+     * token. Only safe to omit when the expression's node type fixes its
+     * first rendered character to something that is never part of an
+     * identifier or number, regardless of what the expression contains.
+     */
+    private boolean needsSpaceBeforeExpression(AstNode expr) {
+        if (expr == null) {
+            return false;
+        }
+        switch (expr.getType()) {
+            case Token.LP:                  // ParenthesizedExpression: "("
+            case Token.OBJECTLIT:           // "{"
+            case Token.ARRAYLIT:            // "["
+            case Token.STRING:              // a quote character
+            case Token.TEMPLATE_LITERAL:    // "`"
+            case Token.REGEXP:              // "/"
+                return false;
+            default:
+                return true;
+        }
     }
 
     private boolean needsParentheses(AstNode child, InfixExpression parent, boolean isLeft) {
