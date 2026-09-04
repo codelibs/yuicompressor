@@ -653,6 +653,52 @@ class ModernJsTest {
                 "munging the shorthand would read a property that does not exist: " + result);
     }
 
+    // Shorthand WITH a default is the same shape one character further on, and
+    // Rhino describes it differently: isShorthand() is false, and the form is
+    // instead identified by the right being an Assignment whose left is the
+    // SAME Name object as prop.getLeft(). Keying only on isShorthand() left all
+    // three positions below broken.
+
+    @Test
+    void aShorthandDestructuredParameterWithADefaultKeepsItsKey() throws Exception {
+        String result = compress("function f({ someKey = 5 }) { return someKey; }");
+        assertEquals("function f({someKey:a=5}){return a;}", result,
+                "the binding must be munged and the key must not: " + result);
+    }
+
+    @Test
+    void aShorthandVarDestructuringWithADefaultKeepsItsKey() throws Exception {
+        String result = compress("function f(o) { var { someKey = 5 } = o; return someKey; }");
+        assertEquals("function f(b){var {someKey:a=5}=b;return a;}", result, result);
+    }
+
+    @Test
+    void aShorthandAssignmentDestructuringWithADefaultKeepsItsKey() throws Exception {
+        // The silent one: before this fix it emitted "{someKey:someKey=5}",
+        // which parses and returns undefined instead of the default.
+        String result = compress("function f(o) { var someKey; ({ someKey = 5 } = o); return someKey; }");
+        assertEquals("function f(b){var a;({someKey:a=5}=b);return a;}", result, result);
+    }
+
+    @Test
+    void aNonShorthandPropertyWithADefaultIsUnaffected() throws Exception {
+        // "{k: b = 1}" has the same node shape but two DISTINCT Name objects,
+        // so the key is not the binding and only the binding is munged. This is
+        // the case the object-identity discriminator must keep telling apart.
+        assertEquals("function f({k:a=5}){return a;}", compress("function f({ k: someKey = 5 }) { return someKey; }"));
+    }
+
+    @Test
+    void anArrayDestructuringDefaultIsUnaffected() throws Exception {
+        assertEquals("function f([a=5]){return a;}", compress("function f([ someKey = 5 ]) { return someKey; }"));
+    }
+
+    @Test
+    void aShorthandWithADefaultThatIsNotMungedStaysShorthand() throws Exception {
+        // Nothing to rename, so the original form is kept rather than expanded.
+        assertEquals("({g=1}=o);", compressNoMunge("({ g = 1 } = o);"));
+    }
+
     @Test
     void aShorthandPropertyThatIsNotMungedStaysShorthand() throws Exception {
         // The other direction: an unmunged binding must not be expanded to

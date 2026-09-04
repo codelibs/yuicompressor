@@ -110,6 +110,22 @@ class DifferentialExecutionTest {
             // Destructuring parameters, which must round-trip exactly.
             "function f([a,b]){ return a+b; }\nconsole.log(f([1,2]));",
             "function f({b}){ return b; }\nconsole.log(f({b: 7}));",
+            // Shorthand WITH a default. Rhino reports isShorthand() == false
+            // for this form, so the expansion above did not run and the same
+            // Name object served as key and binding - the key guard suppressed
+            // munging on the binding while body references were munged. All
+            // three positions, because the defect is in the shape, not the
+            // position. The assignment form is the silent one: it printed
+            // "undefined undefined" and passed node --check.
+            "function f(o) { var someKey; ({ someKey = 5 } = o); return someKey; }\n"
+                    + "console.log(f({}), f({someKey: 9}));",
+            "function f({ someKey = 5 }) { return someKey; }\nconsole.log(f({}), f({someKey: 9}));",
+            "function f(o) { var { someKey = 5 } = o; return someKey; }\n"
+                    + "console.log(f({}), f({someKey: 9}));",
+            // The neighbouring forms that were already correct, kept so a
+            // future change to the discriminator cannot quietly break them.
+            "function f({ k: someKey = 5 }) { return someKey; }\nconsole.log(f({}), f({k: 9}));",
+            "function f([ someKey = 5 ]) { return someKey; }\nconsole.log(f([]), f([9]));",
             // Redundant double braces were semantically neutral, so this is a
             // guard rather than a reproduction.
             "var out = [];\nfor (var i=0;i<3;i++) { out.push(i); }\nconsole.log(out.join(','));",

@@ -1432,27 +1432,35 @@ public class MungedCodeGenerator {
             if (i > 0) output.append(",");
             ObjectProperty prop = props.get(i);
 
-            // Check for shorthand property
-            if (prop.isShorthand()) {
-                AstNode left = prop.getLeft();
-                if (left instanceof Name) {
-                    // "{b}" is shorthand for "{b:b}" - the identifier is BOTH
-                    // the property key and the binding, so munging it renames
-                    // the key too. In an object literal that silently renames
-                    // the property; in a destructuring pattern (including a
-                    // destructured parameter) it reads a property that does not
-                    // exist, so "function f({b}){return b;}" called with
-                    // {b:7} returned undefined. Expanding to "b:a" keeps the
-                    // key and munges only the binding.
-                    String original = ((Name) left).getIdentifier();
-                    String munged = getMungedName(original, prop);
-                    output.append(original);
-                    if (!munged.equals(original)) {
-                        output.append(":").append(munged);
-                    }
-                } else {
-                    visitNode(left);
+            // Check for shorthand property, with or without a default
+            Name shorthand = shorthandBinding(prop);
+            if (shorthand != null) {
+                // "{b}" is shorthand for "{b:b}" and "{b=1}" for "{b:b=1}" -
+                // the identifier is BOTH the property key and the binding, so
+                // munging it renames the key too. In an object literal that
+                // silently renames the property; in a destructuring pattern
+                // (including a destructured parameter) it reads a property that
+                // does not exist, so "function f({b}){return b;}" called with
+                // {b:7} returned undefined. Expanding to "b:a" keeps the key
+                // and munges only the binding.
+                String original = shorthand.getIdentifier();
+                String munged = getMungedName(original, prop);
+                output.append(original);
+                if (!munged.equals(original)) {
+                    output.append(":").append(munged);
                 }
+                if (!prop.isShorthand()) {
+                    // The "{b=1}" form. shorthandBinding() accepts a
+                    // non-shorthand property only when its right is the
+                    // Assignment carrying this binding's default, so the cast
+                    // is safe here and nowhere else.
+                    output.append("=");
+                    visitNode(((Assignment) prop.getRight()).getRight());
+                }
+            } else if (prop.isShorthand()) {
+                // Shorthand whose left is not a Name. Not known to be
+                // reachable, but emitting nothing would be silent truncation.
+                visitNode(prop.getLeft());
             } else if (prop.isGetterMethod() || prop.isSetterMethod() || prop.isNormalMethod()) {
                 visitObjectMethod(prop);
             } else {
@@ -1470,6 +1478,46 @@ public class MungedCodeGenerator {
             }
         }
         output.append("}");
+    }
+
+    /**
+     * The binding {@code Name} of a shorthand property, or null if {@code prop}
+     * is not one.
+     *
+     * <p>There are two shorthand forms and Rhino describes them differently.
+     * Plain <code>{b}</code> reports {@code isShorthand() == true}. Shorthand
+     * carrying a default, <code>{b = 1}</code>, reports
+     * {@code isShorthand() == false}, and is recognisable instead by its right
+     * being an {@code Assignment} whose left is the <b>same Name object</b> as
+     * {@code prop.getLeft()}.
+     *
+     * <p>That object identity is the whole discriminator, and it is exact:
+     * <code>{k: b = 1}</code> has an identical node shape but two distinct Name
+     * objects, because there the key and the binding really are different
+     * identifiers and only the binding may be munged. Verified against Rhino
+     * 1.8.0 rather than assumed.
+     *
+     * <p>Keying only on {@code isShorthand()} is what made the first version of
+     * this fix stop one character short of <code>{b = 1}</code>. In that path
+     * the shared Name object also reaches {@link #visitName}'s property-key
+     * guard, which then suppressed munging on the BINDING while every reference
+     * to it in the body was munged normally - a declaration and its uses under
+     * different names. As an assignment pattern that is silent:
+     * <code>({someKey = 5} = o)</code> simply produced the wrong answer.
+     */
+    private static Name shorthandBinding(ObjectProperty prop) {
+        AstNode left = prop.getLeft();
+        if (!(left instanceof Name)) {
+            return null;
+        }
+        if (prop.isShorthand()) {
+            return (Name) left;
+        }
+        AstNode right = prop.getRight();
+        if (right instanceof Assignment && ((Assignment) right).getLeft() == left) {
+            return (Name) left;
+        }
+        return null;
     }
 
     /**
