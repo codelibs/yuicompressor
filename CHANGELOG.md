@@ -16,11 +16,15 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   verbatim, including internal whitespace, instead of being reformatted like ordinary declarations
 - Empty `@layer` blocks (e.g. `@layer base, components, utilities;`) are no longer deleted; they
   declare cascade order even with no rules inside
-- Modern at-rule, function, and pseudo-class names are now normalised to lowercase consistently
+- Modern at-rule names (`@container`, `@layer`, `@property`, `@scope`,
+  `@starting-style`, `@supports`) are now normalised to lowercase, extending the
+  existing at-rule lowercasing list
 
 ### Fixed (JavaScript)
 - Optional chaining is preserved and no longer widened: `a?.b.c` now stays `a?.b.c` instead of
-  becoming `a?.b?.c`, which would silently turn a `TypeError` on a null `a` into a quiet `undefined`
+  becoming `a?.b?.c`. The two diverge when `a` is non-null but `a.b` is null: `a?.b.c` throws
+  a `TypeError` on the plain `.c` access, while the widened `a?.b?.c` would silently swallow
+  that error and return `undefined` instead
 - Optional catch binding (`catch {}`) is no longer emitted as the invalid `catch()`
 - Template literal and regex literal contents are no longer rewritten, so internal whitespace
   (including runs of spaces) round-trips unchanged
@@ -31,9 +35,10 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   `a + +b` no longer collapses into `a++b`, and `- -a` / `+ +c` no longer collapse into the
   pre-decrement/pre-increment `--a` / `++c`, which would silently mutate the operand
 - Fixed comment injection in minified output: a `/` operator directly before a regex literal no
-  longer forms a `//` line comment that swallows the rest of the statement, and a `<` before `!--`
-  no longer forms the Annex B `<!--` comment opener, which (minified output being a single line)
-  swallowed the rest of the file
+  longer forms a `//` line comment, and a `<` before `!--` no longer forms the Annex B `<!--`
+  comment opener. Both are single-line comment openers, and since minified output is a single
+  line, either one swallowed everything after it in the file, not merely the rest of the
+  statement
 - Locals visible to `eval` or `with` are no longer munged, restoring the safety the README promises
   for those constructs (direct `eval` can read any local in its scope chain by name; `with` can
   dynamically shadow one)
