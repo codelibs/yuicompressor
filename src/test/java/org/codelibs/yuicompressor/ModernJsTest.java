@@ -166,7 +166,7 @@ class ModernJsTest {
     @Test
     void yieldStarDelegatesRatherThanYieldingTheGeneratorOnce() throws Exception {
         String result = compressNoMunge("function* g(){ yield* other(); }");
-        assertTrue(result.contains("yield*"),
+        assertEquals("function* g(){yield* other();}", result,
                 "'yield* x()' delegates to another generator; dropping the '*' makes it "
                         + "'yield x()', which yields the generator object once instead: " + result);
     }
@@ -174,15 +174,17 @@ class ModernJsTest {
     @Test
     void plainYieldStillHasNoStar() throws Exception {
         String result = compressNoMunge("function* g(){ yield other(); }");
-        assertFalse(result.contains("yield*"), "a plain (non-delegating) yield must not gain a '*': " + result);
-        assertTrue(result.contains("yield "), "a plain yield with an operand still needs its value: " + result);
+        assertEquals("function* g(){yield other();}", result,
+                "a plain (non-delegating) yield must not gain a '*': " + result);
     }
 
     @Test
     void labeledStatementDoesNotCrashTheCompressor() throws Exception {
         String result = compressNoMunge("outer: for (var i=0;i<3;i++) { break outer; }");
-        assertTrue(result.contains("outer:"), "the label must survive: " + result);
-        assertTrue(result.contains("break outer"), "'break' must keep its label: " + result);
+        assertEquals("outer:for(var i=0;i<3;i++){{break outer;}}", result,
+                "the label and the 'break outer' inside it must survive, and a labeled "
+                        + "for-loop must not gain a needless trailing ';' (a for-loop never "
+                        + "needs one): " + result);
     }
 
     @Test
@@ -269,5 +271,81 @@ class ModernJsTest {
         assertFalse(postfixThenAdd.equals(addThenPrefix),
                 "'a++ + b' and 'a + ++b' have different meanings and must not collapse "
                         + "to the same output: " + postfixThenAdd);
+    }
+
+    // A bare "<" immediately before "!--" (e.g. "!" applied to a prefix
+    // "--x") forms "<!--", the Annex B SingleLineHTMLOpenComment. Minified
+    // output is a single line, so that "comment" swallows the rest of the
+    // ENTIRE FILE, not just the rest of the statement - worse than defect
+    // (D), and like it, 'node --check' reports the corrupted output as
+    // valid. "<=" and "<<" are unaffected: once either is consumed as its
+    // own token, the next token scan starts past where "<!--" could ever
+    // be recognized.
+
+    @Test
+    void ltOperatorDoesNotMergeWithFollowingAnnexBOpenComment() throws Exception {
+        String result = compressNoMunge("var a = 1, b = 5; var r = a < !--b; console.log(r, b);");
+        assertFalse(result.contains("<!--"),
+                "'<!--' opens a comment that swallows the rest of the FILE (minified "
+                        + "output is one line), not just the rest of the statement: " + result);
+        assertEquals("var a=1,b=5;var r=a< !--b;console.log(r,b);", result, result);
+    }
+
+    @Test
+    void lshOperatorIsNotAffectedByTheAnnexBCheck() throws Exception {
+        // "<<" is consumed as its own token before the scan could ever see
+        // "<!--" starting - a separator here would only cost bytes.
+        String result = compressNoMunge("var a = 1, b = 5; var r = a << !--b;");
+        assertEquals("var a=1,b=5;var r=a<<!--b;", result, result);
+    }
+
+    @Test
+    void leOperatorIsUnaffectedByTheAnnexBCheck() throws Exception {
+        String result = compressNoMunge("var r = a <= b;");
+        assertEquals("var r=a<=b;", result, result);
+    }
+
+    @Test
+    void ltOperatorWithAnOrdinaryOperandIsUnaffected() throws Exception {
+        String result = compressNoMunge("var r = a < b;");
+        assertEquals("var r=a<b;", result, result);
+    }
+
+    @Test
+    void postfixDecrementThenGtDoesNotGainANeedlessSeparator() throws Exception {
+        // "-->" is only the Annex B SingleLineHTMLCloseComment when it
+        // begins a line with nothing but whitespace before it. The
+        // generator never emits it in that position (line breaks only
+        // occur after ';' or '}'), so this must stay unseparated.
+        String result = compressNoMunge("var a = 1, b = 5; var r = a-- > b;");
+        assertEquals("var a=1,b=5;var r=a-->b;", result, result);
+    }
+
+    // needsSemicolon(MungedCodeGenerator.java) excluded Token.LABEL the same
+    // way visitNode's switch once had a dead "case Token.LABEL:" - but
+    // LabeledStatement.getType() is always Token.EXPR_VOID, so that
+    // exclusion never fired and every labeled statement got an unconditional
+    // (and sometimes needless) trailing ';'.
+
+    @Test
+    void labeledForLoopDoesNotGainANeedlessSemicolon() throws Exception {
+        String result = compressNoMunge("outer: for (var i=0;i<3;i++) { f(); }");
+        assertEquals("outer:for(var i=0;i<3;i++){{f();}}", result,
+                "a for-loop never needs a trailing ';', with or without a label: " + result);
+    }
+
+    @Test
+    void labeledBlockDoesNotGainANeedlessSemicolon() throws Exception {
+        String result = compressNoMunge("outer: { g(); }");
+        assertEquals("outer:{g();}", result,
+                "a block never needs a trailing ';', with or without a label: " + result);
+    }
+
+    @Test
+    void labeledExpressionStatementKeepsItsSemicolon() throws Exception {
+        // Not a blanket exclusion: a labeled expression statement genuinely
+        // needs its ';', and must keep it.
+        String result = compressNoMunge("outer: x();");
+        assertEquals("outer:x();", result, result);
     }
 }

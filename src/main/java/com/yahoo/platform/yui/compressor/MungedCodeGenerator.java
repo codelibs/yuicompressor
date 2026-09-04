@@ -970,9 +970,9 @@ public class MungedCodeGenerator {
     }
 
     /**
-     * Inserts a single space at {@code mark} if the character the operand
-     * placed there would combine with {@code operator}'s last character into
-     * a different token than the two are meant to be, e.g.:
+     * Inserts a single space at {@code mark} if the character(s) the operand
+     * placed there would combine with {@code operator} into a different
+     * token than the two are meant to be, e.g.:
      * <ul>
      * <li>"+" immediately before a unary "+" or prefix "++" operand reads as
      * the increment operator: "a+" + "+b" -> "a++b" (a SyntaxError, not
@@ -982,16 +982,32 @@ public class MungedCodeGenerator {
      * <li>"/" immediately before a "/" (a regex literal's opening delimiter)
      * opens a line comment that silently swallows the rest of the line.
      * <li>"/" immediately before a "*" would open a block comment.
+     * <li>bare "&lt;" immediately before "!--" (e.g. "!" applied to a prefix
+     * "--x") forms "&lt;!--", the Annex B SingleLineHTMLOpenComment. Since
+     * minified output is a single line, that "comment" swallows the rest of
+     * the entire FILE, not just the rest of the statement - worse than the
+     * "/" case above, and it too leaves output that still parses. "&lt;="
+     * and "&lt;&lt;" are unaffected: once either is consumed as its own
+     * token, the next token scan starts past where "&lt;!--" could ever be
+     * recognized, so this is scoped to the bare, one-character "&lt;"
+     * operator specifically (checked via {@code operator}, not just its
+     * last character, since a 1-character lookahead can't tell "&lt;" apart
+     * from "&lt;=" / "&lt;&lt;").
      * </ul>
-     * Checking the actual rendered character (rather than the operand's node
-     * type) covers unary "+"/"-", prefix "++"/"--" and regex literals alike
-     * with one rule, and never fires for a merely-adjacent-looking pair that
-     * the lexer would not actually misread (e.g. "*" immediately before "/",
-     * or a left operand ending in "/" or "+"/"-" - see the task report for
-     * the merging pairs considered and why only these four are hazards here).
+     * Checking the actual rendered character(s) (rather than the operand's
+     * node type) covers unary "+"/"-", prefix "++"/"--", regex literals and
+     * "!--" alike with the same technique, and never fires for a merely
+     * adjacent-looking pair the lexer would not actually misread (e.g. "*"
+     * immediately before "/", or a left operand ending in "/" or "+"/"-" -
+     * see the task report for the merging pairs considered and why only
+     * these five are hazards here).
      */
     private void insertSeparatorIfMerging(int mark, String operator) {
         if (output.length() <= mark || operator.isEmpty()) {
+            return;
+        }
+        if (operator.equals("<") && startsWithAnnexBOpenComment(mark)) {
+            output.insert(mark, ' ');
             return;
         }
         char operatorLastChar = operator.charAt(operator.length() - 1);
@@ -1014,6 +1030,18 @@ public class MungedCodeGenerator {
         if (merges) {
             output.insert(mark, ' ');
         }
+    }
+
+    /**
+     * Whether the operand rendered starting at {@code mark} begins with the
+     * three characters "!--" - which, immediately after a bare "&lt;", form
+     * "&lt;!--" (the Annex B SingleLineHTMLOpenComment).
+     */
+    private boolean startsWithAnnexBOpenComment(int mark) {
+        return mark + 3 <= output.length()
+                && output.charAt(mark) == '!'
+                && output.charAt(mark + 1) == '-'
+                && output.charAt(mark + 2) == '-';
     }
 
     private void visitKeywordUnary(UnaryExpression expr, String keyword) {
@@ -1208,6 +1236,18 @@ public class MungedCodeGenerator {
     }
 
     private boolean needsSemicolon(AstNode node) {
+        // LabeledStatement.getType() is always Token.EXPR_VOID (see
+        // visitNode()'s EXPR_RESULT/EXPR_VOID case), never Token.LABEL, so a
+        // "type != Token.LABEL" check below can never exclude one - it would
+        // return true unconditionally for every labeled statement, adding a
+        // needless ";" after e.g. "outer:for(...){...}". Recurse into the
+        // wrapped statement instead, so the decision follows what it
+        // actually is: "outer: x();" still needs its ";" (its wrapped
+        // statement is an ExpressionStatement), "outer:for(...){...}" does
+        // not (its wrapped statement is a FOR loop).
+        if (node instanceof LabeledStatement) {
+            return needsSemicolon(((LabeledStatement) node).getStatement());
+        }
         int type = node.getType();
         return type != Token.FUNCTION &&
                type != Token.BLOCK &&
@@ -1217,8 +1257,7 @@ public class MungedCodeGenerator {
                type != Token.DO &&
                type != Token.SWITCH &&
                type != Token.TRY &&
-               type != Token.WITH &&
-               type != Token.LABEL;
+               type != Token.WITH;
     }
 
     /**
