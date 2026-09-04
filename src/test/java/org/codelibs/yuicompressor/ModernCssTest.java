@@ -482,6 +482,62 @@ class ModernCssTest {
         assertEquals(result.replace("say \"hi", "say hi"), control, control);
     }
 
+    // The line-break pass asks the same question collectComments asks - what region is
+    // this offset in - and now answers it with the same three primitives. Each test
+    // below is one region that a newline must not be inserted into.
+
+    @Test
+    void aCommentOpenerInsideAnUnquotedUrlDoesNotMoveTheLinebreak() throws Exception {
+        // "/*" inside an unquoted url-token is ordinary URL content, not a comment -
+        // collectComments has always had that right. The line-break pass did not, so it
+        // ran to the next "*/" anywhere in the file, which is in the NEXT rule's string,
+        // and put the newline inside the rule after that one. Valid CSS in, a raw
+        // newline inside a string literal out, exit 0, so that declaration is dropped.
+        assertEquals("a{background:url(/x/*p.png)}\nb{content:\"*/z\"}\n"
+                + "c{content:\"aaaaaaaaaa}bbbbbbbbbb\"}\nd{color:red}",
+                compress("a{background:url(/x/*p.png)}\nb{content:\"*/z\"}\n"
+                        + "c{content:\"aaaaaaaaaa}bbbbbbbbbb\"}\nd{color:#ff0000}", 10));
+
+        // Same shape through a preserved data: URL. Note it has to be the UNQUOTED
+        // form: a quoted one is protected by the string region regardless.
+        assertEquals("a{background:url(data:image/svg+xml,/*p)}\nb{content:\"*/z\"}\n"
+                + "c{content:\"aaaaaaaaaa}bbbbbbbbbb\"}\nd{color:red}",
+                compress("a{background:url(data:image/svg+xml,/*p)}\nb{content:\"*/z\"}\n"
+                        + "c{content:\"aaaaaaaaaa}bbbbbbbbbb\"}\nd{color:#ff0000}", 10));
+    }
+
+    @Test
+    void aBraceInsideAnUnquotedUrlIsNotARuleBoundary() throws Exception {
+        // "}" is a perfectly legal character in a url-token (CSS Syntax L3 4.3.6 stops
+        // only at ")", whitespace, quotes and "("), so this is valid CSS. The pass used
+        // to treat it as the end of a rule and insert the newline inside the URL, which
+        // makes it a bad-url-token - whitespace is exactly what a url-token cannot
+        // contain - so the declaration was dropped.
+        assertEquals("a{background:url(/x/}p.png)}\nbbbb{color:red}\ncccc{margin:0}\ndddd{padding:0}",
+                compress("a{background:url(/x/}p.png)}\nbbbb{color:#ff0000}\ncccc{margin:0px}\n"
+                        + "dddd{padding:0px}", 10));
+
+        // The quoted form was already safe, and must stay that way.
+        assertEquals("a{background:url(\"/x/}p.png\")}\nbbbb{color:red}\ncccc{margin:0}\ndddd{padding:0}",
+                compress("a{background:url(\"/x/}p.png\")}\nbbbb{color:#ff0000}\ncccc{margin:0px}\n"
+                        + "dddd{padding:0px}", 10));
+    }
+
+    @Test
+    void breakingStillHappensWhereItShould() throws Exception {
+        // Controls, so that a future "fix" cannot satisfy the tests above by simply
+        // refusing to break. A "}" inside a comment or a string is not a boundary; one
+        // ending a real rule is.
+        assertEquals("aaaa{color:red}\nbbbb{margin:0}\ncccc{padding:0}",
+                compress("aaaa{color:#ff0000}bbbb{margin:0px}cccc{padding:0px}", 10));
+        assertEquals("aaaa{color:red}\nbbbb{margin:0}\ncccc{padding:0}",
+                compress("aaaa{color:#ff0000}bbbb{margin:0px}cccc{padding:0px}", 0));
+        assertEquals("/*! a } brace */aaaa{color:red}\nbbbb{color:red}",
+                compress("/*! a } brace */aaaa{color:#ff0000}\nbbbb{color:#ff0000}", 10));
+        assertEquals("aaaa{content:\"xxxxxxxxxx}yyyyyyyyyy\"}\nbbbb{color:red}",
+                compress("aaaa{content:\"xxxxxxxxxx}yyyyyyyyyy\"}\nbbbb{color:#ff0000}", 10));
+    }
+
     // data: URL white space (R38). Only a base64 payload may lose the white space
     // inside its quoted string; every other payload is literal data.
 

@@ -1170,59 +1170,8 @@ public class CssCompressor {
 
         // Insert linebreaks for source control tools that don't like long lines.
         // This is done after token restoration so that line lengths are accurate.
-        // We track string state to avoid inserting linebreaks inside string literals.
         if (linebreakpos >= 0) {
-            i = 0;
-            int linestartpos = 0;
-            sb = new StringBuffer(css);
-            boolean inString = false;
-            char stringChar = 0;
-
-            while (i < sb.length()) {
-                char c = sb.charAt(i);
-
-                // Step over comments before looking at quotes. A quote inside a
-                // comment is not a string delimiter, and the tracking below has no
-                // way to know that on its own: one unpaired quote in a preserved
-                // "/*! ... */" banner inverted it for the rest of the file, and a
-                // linebreak then landed inside a real string literal - a parse error
-                // in CSS, so the declaration is dropped. Measured, exit 0:
-                // /*! say "hi */a{content:"aaaa...}bbbb"} broke inside the string.
-                if (!inString && c == '/' && i + 1 < sb.length() && sb.charAt(i + 1) == '*') {
-                    int commentEnd = sb.indexOf("*/", i + 2);
-                    i = commentEnd < 0 ? sb.length() : commentEnd + 2;
-                    continue;
-                }
-
-                // Track whether we're inside a string literal
-                if (!inString && (c == '"' || c == '\'')) {
-                    inString = true;
-                    stringChar = c;
-                } else if (inString && c == stringChar) {
-                    // Check for escaped quote (look back for odd number of backslashes)
-                    int backslashCount = 0;
-                    int j = i - 1;
-                    while (j >= 0 && sb.charAt(j) == '\\') {
-                        backslashCount++;
-                        j--;
-                    }
-                    if (backslashCount % 2 == 0) {
-                        // Not escaped, end of string
-                        inString = false;
-                    }
-                }
-
-                i++;
-
-                // Only insert linebreak at '}' if not inside a string
-                if (c == '}' && !inString && i - linestartpos > linebreakpos) {
-                    sb.insert(i, '\n');
-                    i++; // Skip the newly inserted newline
-                    linestartpos = i; // New line starts after the newline character
-                }
-            }
-
-            css = sb.toString();
+            css = insertLineBreaks(css, linebreakpos);
         }
 
         // Trim the final string (for any leading or trailing white spaces)
@@ -1230,6 +1179,84 @@ public class CssCompressor {
 
         // Write the output...
         out.write(css);
+    }
+
+    /**
+     * Inserts a newline after a rule's closing "}" once the current line is longer
+     * than {@code linebreakpos}, never inside a region where a newline would change
+     * what the stylesheet means.
+     *
+     * <p>It answers the same question {@link #collectComments} answers - "what region
+     * of the document is this offset in?" - using the same primitives in the same
+     * order: {@link #skipString}, then
+     * {@link #startsUrlToken}/{@link #skipUrlToken}, then a comment. The sharing is
+     * the point of this method existing. The pass used to carry its own idea of
+     * regions, and every time the two models disagreed, the disagreement was a defect
+     * that dropped a declaration from a valid stylesheet with exit code 0 - a raw
+     * newline inside a CSS string is a parse error:
+     *
+     * <ul>
+     * <li>It tracked strings but not comments, so one unpaired quote in a preserved
+     * {@code /*!} banner inverted the tracking for the rest of the file and a newline
+     * landed inside a real string literal.
+     * <li>Teaching it comments but not URLs moved the same fault one layer down: a
+     * {@code /*} inside an unquoted url-token is ordinary URL content, and
+     * {@link #collectComments} correctly does not treat it as a comment, but this
+     * pass did - and ran to the next {@code *}{@code /} anywhere in the file.
+     * {@code a{background:url(/x/}{@code *p.png)}} followed by
+     * {@code b{content:"*}{@code /z"}} put the newline inside the <em>next</em>
+     * rule's string.
+     * <li>An apostrophe inside an unquoted url-token opened a string that never
+     * closed, silently suppressing every later break. That one predates both fixes.
+     * </ul>
+     *
+     * <p>Every failure mode of the three primitives ends a region <em>late</em>: an
+     * unterminated string, URL or comment runs to the end of the input. That is the
+     * safe direction here, and deliberately so - refusing to break only produces a
+     * long line, while breaking in the wrong place corrupts the output.
+     *
+     * <p>One thing is deliberately not shared. {@link #collectComments} throws on an
+     * unterminated comment, because there a {@code /*} with no closing delimiter
+     * means the rest of the input is not what it appears to be. Here it is merely a
+     * region running to the end, and it is reachable without the author having done
+     * anything this pass can still refuse: a comment following an unterminated string
+     * is never collected, so it reaches the output as written. Throwing at this point
+     * would fail a compression that has already succeeded.
+     */
+    private static String insertLineBreaks(String css, int linebreakpos) {
+        StringBuilder out = new StringBuilder(css.length());
+        int linestart = 0;
+        int i = 0;
+        int len = css.length();
+        while (i < len) {
+            char c = css.charAt(i);
+            if (c == '"' || c == '\'') {
+                int end = skipString(css, i);
+                out.append(css, i, end);
+                i = end;
+                continue;
+            }
+            if (startsUrlToken(css, i)) {
+                int end = skipUrlToken(css, i);
+                out.append(css, i, end);
+                i = end;
+                continue;
+            }
+            if (c == '/' && i + 1 < len && css.charAt(i + 1) == '*') {
+                int end = css.indexOf("*/", i + 2);
+                end = end < 0 ? len : end + 2;
+                out.append(css, i, end);
+                i = end;
+                continue;
+            }
+            out.append(c);
+            i++;
+            if (c == '}' && out.length() - linestart > linebreakpos) {
+                out.append('\n');
+                linestart = out.length();
+            }
+        }
+        return out.toString();
     }
 
     /**

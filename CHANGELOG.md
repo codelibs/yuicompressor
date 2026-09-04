@@ -52,11 +52,21 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   0 - the calc respacer reads the marker's own `/*` and `*/` as division and multiplication. The
   markers are now settled where the spans are captured, keeping `/*!` comments and dropping the
   rest, exactly as elsewhere
-- `--line-break` no longer inserts a newline inside a string literal. The pass tracked string state
-  but not comments, so one unpaired quote in a preserved `/*! … */` banner inverted the tracking
-  for the rest of the file; a newline in a CSS string is a parse error, so the declaration it broke
-  was dropped. With an apostrophe instead, the tracker stuck "inside a string" and suppressed every
-  later linebreak - the harmless half of the same fault
+- **`--line-break` now decides where a rule ends using the same region model as comment
+  collection**, rather than its own. A raw newline inside a CSS string is a parse error, so every
+  disagreement between those two models dropped a declaration from a valid stylesheet with exit
+  code 0. There were three, and the first two were found one after the other in the same file:
+  the pass tracked strings but not comments, so a single unpaired quote in a preserved `/*! … */`
+  banner inverted its tracking for the rest of the file and the newline landed inside a real
+  string; teaching it comments alone moved the fault one layer down, because a `/*` inside an
+  *unquoted* `url()` is ordinary URL content rather than a comment, so
+  `a{background:url(/x/*p.png)}` followed by `b{content:"*/z"}` put the newline inside the *next*
+  rule's string; and separately, a `}` inside an unquoted `url()` - legal there, since a url-token
+  stops only at `)`, whitespace, a quote or `(` - was read as the end of a rule and broke the line
+  inside the URL, which is precisely what a url-token may not contain. The pass now steps over
+  strings, `url()` tokens and comments with the same helpers `collectComments` uses, so the two
+  cannot drift apart again. Every failure mode of those helpers ends a region late, which here
+  only means a longer line
 - **White space inside a non-base64 `data:` URL is no longer deleted.** Preserving a `data:` URL
   stripped white space from the whole token, including the contents of its quoted string. For a
   base64 payload that is a convenience; for any other payload the data is literal, so it destroyed
@@ -225,8 +235,11 @@ every trigger is already-invalid CSS.
   stripped. A string closed by a newline behaves the same way, although CSS ends the string there
 - After an unclosed `url(`, the same thing, for the rest of the file
 - A stray quote inside an unquoted `url()` - a bad-url token - suppresses collection to the end of
-  that span. The scanner steps over the quoted region deliberately: the alternative ends the URL
-  early and deletes bytes from it, which is the corruption the release exists to remove
+  that span, and, since `--line-break` now shares the same region model, suppresses line breaking
+  from there on too. The scanner steps over the quoted region deliberately: the alternative ends
+  the URL early, which deletes bytes from it in one pass and breaks the line inside it in the
+  other - the corruption the release exists to remove. Both symptoms are the same helper failing
+  in the same safe direction, which is the point of their sharing it
 
 These three are regressions from the structural comment scanner, not pre-existing behaviour: the
 context-free scan it replaced did strip these comments, by not knowing where it was - the same
@@ -275,7 +288,7 @@ bought, and it is the safe direction to fail in.
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green
-- Test suite grew from 163 to 521 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+- Test suite grew from 163 to 524 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
   parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
