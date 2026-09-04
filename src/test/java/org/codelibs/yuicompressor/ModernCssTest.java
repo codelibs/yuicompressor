@@ -481,4 +481,64 @@ class ModernCssTest {
                 + "c{color:#ff0000}", 20);
         assertEquals(result.replace("say \"hi", "say hi"), control, control);
     }
+
+    // ------------------------------------------------------------------
+    // KNOWN DEFECTS, deferred to Release 2 by ruling R37. The two tests below pin
+    // WRONG output, not correct output. They exist because the two defects are one
+    // problem seen from two ends, and fixing either end alone relocates the
+    // corruption instead of removing it:
+    //
+    //   A-3  preserveToken's regexes match "calc(" and "progid:...Matrix(" without
+    //        knowing they are inside a string, and the captured span's placeholder
+    //        is then never resolved - the restoration loop reaches index 0 before
+    //        the enclosing string, which holds a higher index, is put back.
+    //
+    //   A-4  respaceCalcOperators runs after token restoration, so by then no
+    //        string, comment or URL is protected any more.
+    //
+    // The trap: A-3 has a tempting one-line fix - resolve the nested reference in
+    // the string-preserving pass, which the existing resolvePreservedTokenReferences
+    // helper already does elsewhere. Land it alone and the string's real content
+    // "calc(1px + 2px)" is restored, whereupon A-4 respaces it to
+    // "calc(1px  +  2px)". The visible scaffolding becomes an invisible rewrite of
+    // the author's text, which is worse, because it looks plausible.
+    //
+    // So: if one of these tests starts failing, the other end has to move in the
+    // same commit. Both are pre-existing - byte-identical at the release base
+    // 070bdd7 - and are recorded, not accepted as correct.
+    // ------------------------------------------------------------------
+
+    @Test
+    void calcInsideAStringIsReplacedByScaffolding_knownDefectR37() throws Exception {
+        // Valid CSS in, internal scaffolding out, exit code 0. Read A-4's test below
+        // before changing any of these expectations.
+        assertEquals("a{content:\"calc(___YUICSSMIN_PRESERVED_TOKEN_0___)\"}",
+                compress("a{content:\"calc(1px + 2px)\"}"));
+        assertEquals("a[data-x=\"calc(___YUICSSMIN_PRESERVED_TOKEN_0___)\"]{color:red}",
+                compress("a[data-x=\"calc(1px + 2px)\"]{color:#ff0000}"));
+        assertEquals("a{font-family:\"calc(___YUICSSMIN_PRESERVED_TOKEN_0___)\",serif}",
+                compress("a{font-family:\"calc(x)\",serif}"));
+
+        // Not only calc(): the progid rule has the same shape.
+        assertEquals("a{content:\"progid:DXImageTransform.Microsoft.Matrix(___YUICSSMIN_PRESERVED_TOKEN_0___)\"}"
+                + "b{color:red}",
+                compress("a{content:\"progid:DXImageTransform.Microsoft.Matrix(M11=1)\"}b{color:#ff0000}"));
+    }
+
+    @Test
+    void calcRespacingIgnoresStringAndCommentBoundaries_knownDefectR37() throws Exception {
+        // Inside a preserved comment: harmless in a browser, since it is a comment,
+        // but it is the same blindness and the cheapest demonstration of it.
+        assertEquals("/*! calc(1px + 2px) */a{color:red}", compress("/*! calc(1px+2px) */a{color:#ff0000}"));
+
+        // Inside a URL path. This input is a bad-url per CSS Syntax L3 4.3.14 - "(" is
+        // not allowed in a url-token - so it is already invalid CSS; the quoted form,
+        // which IS valid, is intercepted by A-3 above before it can reach here. That
+        // is the entanglement: A-3 currently hides A-4's only valid-CSS string case.
+        assertEquals("a{background:url(/x/calc(1px + 2px)/y.png)}b{color:red}",
+                compress("a{background:url(/x/calc(1px+2px)/y.png)}b{color:#ff0000}"));
+
+        // Control: the pass is doing its actual job, and must keep doing it.
+        assertEquals("a{width:calc(100% - 10px)}b{color:red}", compress("a{width:calc(100%-10px)}b{color:#ff0000}"));
+    }
 }
