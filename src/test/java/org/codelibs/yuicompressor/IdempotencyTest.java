@@ -170,8 +170,8 @@ class IdempotencyTest {
     void mungingIsNotAFixedPoint() throws Exception {
         String once = js(read("jquery-1.6.4.js"), true);
         String twice = js(once, true);
-        assertEquals(104769, once.length(), "first-pass length changed; see JsGoldenFileTest's gap table");
-        assertEquals(99473, twice.length(), "second-pass length changed");
+        assertEquals(104814, once.length(), "first-pass length changed; see JsGoldenFileTest's gap table");
+        assertEquals(99511, twice.length(), "second-pass length changed");
         assertTrue(twice.length() < once.length(),
                 "a second munging pass is expected to be smaller while allocation is unoptimised");
     }

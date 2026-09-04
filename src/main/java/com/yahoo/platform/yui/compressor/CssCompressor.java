@@ -268,46 +268,44 @@ public class CssCompressor {
      */
     private String preserveCustomPropertyValues(String css, ArrayList preservedTokens) {
         StringBuffer sb = new StringBuffer();
-        int i = 0;
         int len = css.length();
+        int copyFrom = 0;
+        int i = 0;
         while (i < len) {
-            int start = css.indexOf("--", i);
-            if (start < 0) {
-                sb.append(css, i, len);
-                break;
+            char c = css.charAt(i);
+            // Strings and unquoted url-tokens are opaque: a '--', a ':', a brace or a
+            // ';' inside one is content, not syntax. This is the same region model
+            // collectComments and insertLineBreaks scan with, reached for the same
+            // reason - the pass used to have no idea regions existed. 'url(/x/;--y.png)'
+            // put a '--' straight after a ';', so it read as a declaration boundary;
+            // the search for its ':' then ran out of the url and into the next rule's
+            // 'b:hover', and the value scan ran from there to the end of the stylesheet,
+            // preserving all of it verbatim. One such URL left an entire stylesheet
+            // unminified with exit code 0. An unbalanced brace inside the url did the
+            // same to a real custom property: 'url(a}b.png)' drove the value scan past
+            // the '}' that ended the declaration.
+            if (c == '"' || c == '\'') {
+                i = skipString(css, i);
+                continue;
+            }
+            if (startsUrlToken(css, i)) {
+                i = skipUrlToken(css, i);
+                continue;
             }
             // A declaration starts after '{' or ';' (or a preserved-token
             // placeholder standing in for a comment that precedes it), which
             // distinguishes a custom property from a '--' appearing inside a
             // value such as calc(a --b).
-            if (!startsAtBoundary(css, start, DECLARATION_BOUNDARIES)) {
-                sb.append(css, i, start + 2);
-                i = start + 2;
+            if (c != '-' || i + 1 >= len || css.charAt(i + 1) != '-'
+                    || !startsAtBoundary(css, i, DECLARATION_BOUNDARIES)) {
+                i++;
                 continue;
             }
-            int colon = css.indexOf(':', start);
+            int colon = skipToDeclarationColon(css, i);
             if (colon < 0) {
-                sb.append(css, i, len);
                 break;
             }
-            int depth = 0;
-            int end = colon + 1;
-            while (end < len) {
-                char c = css.charAt(end);
-                if (c == '(' || c == '[' || c == '{') {
-                    depth++;
-                } else if (c == ')' || c == ']') {
-                    depth--;
-                } else if (c == '}') {
-                    if (depth == 0) {
-                        break;
-                    }
-                    depth--;
-                } else if (c == ';' && depth == 0) {
-                    break;
-                }
-                end++;
-            }
+            int end = skipCustomPropertyValue(css, colon + 1);
             // A value such as --content: "a;b"; already had its string content pulled out
             // by the string-preservation step above, so what we capture here is
             // ...___YUICSSMIN_PRESERVED_TOKEN_0___..., not the raw string. Resolve any
@@ -320,11 +318,76 @@ public class CssCompressor {
             String value = css.substring(colon + 1, end).trim();
             value = resolvePreservedTokenReferences(value, preservedTokens);
             preservedTokens.add(value);
-            sb.append(css, i, colon + 1);
+            sb.append(css, copyFrom, colon + 1);
             sb.append("___YUICSSMIN_PRESERVED_TOKEN_").append(preservedTokens.size() - 1).append("___");
+            copyFrom = end;
             i = end;
         }
+        sb.append(css, copyFrom, len);
         return sb.toString();
+    }
+
+    /**
+     * Index of the ":" that ends a custom property's name, or -1 if the declaration
+     * has none. Skips strings and unquoted url-tokens for the reason
+     * {@link #preserveCustomPropertyValues} gives.
+     */
+    private static int skipToDeclarationColon(String css, int start) {
+        int i = start;
+        int len = css.length();
+        while (i < len) {
+            char c = css.charAt(i);
+            if (c == '"' || c == '\'') {
+                i = skipString(css, i);
+                continue;
+            }
+            if (startsUrlToken(css, i)) {
+                i = skipUrlToken(css, i);
+                continue;
+            }
+            if (c == ':') {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    /**
+     * Index just past the last character of a custom property's value: the ";" or the
+     * "}" that ends the declaration, whichever comes first at nesting depth zero.
+     * Skips strings and unquoted url-tokens for the reason
+     * {@link #preserveCustomPropertyValues} gives.
+     */
+    private static int skipCustomPropertyValue(String css, int start) {
+        int len = css.length();
+        int depth = 0;
+        int end = start;
+        while (end < len) {
+            char c = css.charAt(end);
+            if (c == '"' || c == '\'') {
+                end = skipString(css, end);
+                continue;
+            }
+            if (startsUrlToken(css, end)) {
+                end = skipUrlToken(css, end);
+                continue;
+            }
+            if (c == '(' || c == '[' || c == '{') {
+                depth++;
+            } else if (c == ')' || c == ']') {
+                depth--;
+            } else if (c == '}') {
+                if (depth == 0) {
+                    break;
+                }
+                depth--;
+            } else if (c == ';' && depth == 0) {
+                break;
+            }
+            end++;
+        }
+        return end;
     }
 
     private static final String PRESERVED_TOKEN_PREFIX = "___YUICSSMIN_PRESERVED_TOKEN_";
@@ -587,6 +650,31 @@ public class CssCompressor {
      * does open a string, so a fix has to count the backslashes rather than look at
      * one character.
      */
+    /**
+     * Whether an empty block's prelude is an {@code @layer} declaration, which must
+     * survive: an empty "@layer name {}" still declares the layer and fixes its
+     * position in the cascade order. Every other at-rule with an empty body does
+     * nothing at all and is removed like a plain empty rule.
+     *
+     * <p>The name has to end where the at-rule name ends, or "@layers" and
+     * "@layer-x" would be kept as well.
+     */
+    private static boolean isLayerPrelude(String prelude) {
+        int i = 0;
+        while (i < prelude.length() && isCssSpace(prelude.charAt(i))) {
+            i++;
+        }
+        if (!prelude.regionMatches(true, i, "@layer", 0, 6)) {
+            return false;
+        }
+        int after = i + 6;
+        if (after >= prelude.length()) {
+            return true;
+        }
+        char c = prelude.charAt(after);
+        return !(Character.isLetterOrDigit(c) || c == '-' || c == '_');
+    }
+
     private static int skipString(String css, int start) {
         char quote = css.charAt(start);
         int i = start + 1;
@@ -1148,20 +1236,33 @@ public class CssCompressor {
         // '@supports') does nothing at all when its body is empty, so those are still
         // removed, same as a plain empty rule.
         //
-        // A plain char-class exclusion of '@' is not enough to implement even just the
-        // '@layer' exception, because an unanchored regex would just resume matching
-        // right after the '@' (e.g. deleting "layer utilities {}" out of
-        // "@layer utilities {}" and leaving a stray "@" behind). So the three cases are
-        // matched as explicit alternatives instead: an '@layer' prelude is kept
-        // verbatim; any other at-rule prelude is matched and deleted as one unit (so its
-        // '@' is never separated from the rest and left stranded); a plain prelude is
-        // deleted as before.
+        // The prelude is matched as one unit and the '@layer' decision is made on the
+        // matched text, not encoded in the pattern. Excluding '@' from the prelude's
+        // character class instead - so that an at-rule prelude could only be matched by
+        // a separate '@'-anchored alternative - is what broke escaped selectors: '@' is
+        // an ordinary character in a class name once escaped, so ".\\@container{}" put
+        // the only '@' in the middle of a plain prelude. No plain alternative could
+        // match it, the '@' alternative matched from the '@' onward, and deleting
+        // "@container{}" left the ".\\" welded to the next rule - ".\\@container{}p{...}"
+        // came out as ".\\p{...}", a silently wrong selector. Tailwind emits such class
+        // names by the hundred (".\\@lg\\:block").
+        //
+        // The prelude is also anchored to a boundary, and matched possessively. Its
+        // character class excludes exactly the characters it is anchored to, so a
+        // maximal prelude can only begin at the start of the stylesheet or just after
+        // one of them - the anchor rules out no match that was possible without it, it
+        // only stops the engine retrying the ones that cannot succeed. Without it a
+        // brace-free run had to be re-scanned from every offset inside it, once to the
+        // end of the run and then back one character at a time, which is quadratic.
+        // '@property' blocks are preserved whole by this release, so a stylesheet of
+        // them collapses to exactly that: one long run of placeholder text with no
+        // brace in it. 800 of them took 3.2s.
         sb = new StringBuffer();
-        p = Pattern.compile("(?i)(@layer[^\\}\\{/;]*\\{\\})|(@[^\\}\\{/;]*\\{\\}|[^\\}\\{/;@]+\\{\\})");
+        p = Pattern.compile("(?:\\A|(?<=[\\}\\{/;]))([^\\}\\{/;]++)\\{\\}");
         m = p.matcher(css);
         while (m.find()) {
-            if (m.group(1) != null) {
-                m.appendReplacement(sb, Matcher.quoteReplacement(m.group(1)));
+            if (isLayerPrelude(m.group(1))) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(m.group()));
             } else {
                 m.appendReplacement(sb, "");
             }

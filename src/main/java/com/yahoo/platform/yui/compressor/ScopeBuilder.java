@@ -46,6 +46,36 @@ public class ScopeBuilder {
             ScriptOrFnScope fnScope = new ScriptOrFnScope(braceNesting + 1, currentScope);
             scopeMap.put(fn, fnScope);
 
+            // Declare the function's own name. Which scope it lands in is the whole
+            // difference between a declaration and a named function expression:
+            // "function f(){}" binds f in the ENCLOSING scope, while
+            // "var g = function f(){}" binds f only INSIDE f, where it shadows
+            // anything of that name outside and is what a recursive self-call
+            // resolves to.
+            //
+            // Declaring neither is why a local could be munged to the name of the
+            // function sitting beside it: the munger takes its free symbols from the
+            // identifiers a scope knows about, an undeclared name is not one of them,
+            // and so "f" was handed out as if it were free - "function f(x){...}"
+            // beside six locals produced "var f=1", and the call f(...) beside it then
+            // read the variable. It also left a self-call resolving to the outer
+            // variable instead of the function, so reassigning that variable changed
+            // what the recursion called.
+            //
+            // The name is declared but not munged: MungedCodeGenerator.visitFunction
+            // emits it verbatim, so munging it here would rename every reference and
+            // leave the declaration behind. Reserving it is what fixes the collision;
+            // renaming it would be a separate change to the generator.
+            Name fnName = fn.getFunctionName();
+            if (fnName != null && fnName.getIdentifier() != null
+                    && fnName.getIdentifier().length() > 0) {
+                ScriptOrFnScope nameScope =
+                        fn.getFunctionType() == FunctionNode.FUNCTION_STATEMENT
+                                ? currentScope
+                                : fnScope;
+                reserveFunctionName(nameScope, fnName.getIdentifier());
+            }
+
             // Declare function parameters as variables
             List<AstNode> params = fn.getParams();
             for (AstNode param : params) {
@@ -251,6 +281,33 @@ public class ScopeBuilder {
             }
             visitNode(node, scope, braceNesting);
             return false;
+        }
+    }
+
+    /**
+     * Reserves a function's own name in the scope that binds it and in every
+     * enclosing scope that gets munged.
+     *
+     * <p>Reserving only the binding scope is not enough, because the name is
+     * emitted verbatim while the variables around it are renamed. A scope picks
+     * its free symbols by excluding what its own and its ANCESTORS' scopes use -
+     * it never looks down - so an outer variable could still be munged to this
+     * function's name, and inside the function's body that name resolves to the
+     * function, not to the variable. "function outer(){ var longName=5; var g =
+     * function a(){ return longName; }; }" munged longName to "a" and the body
+     * then returned the function itself.
+     *
+     * <p>The global scope is reserved only when the function is itself global.
+     * It is never munged, so nothing there can collide; but every scope in the
+     * file walks up to it, so a reservation there would take the name out of
+     * every unrelated scope as well.
+     */
+    private static void reserveFunctionName(ScriptOrFnScope owner, String name) {
+        for (ScriptOrFnScope scope = owner; scope != null; scope = scope.getParentScope()) {
+            if (scope != owner && scope.getParentScope() == null) {
+                break;
+            }
+            scope.declareIdentifier(name).preventMunging();
         }
     }
 

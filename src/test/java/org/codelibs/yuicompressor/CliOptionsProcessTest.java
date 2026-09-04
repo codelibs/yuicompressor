@@ -212,7 +212,9 @@ class CliOptionsProcessTest {
         Path map = dir.resolve("map.txt");
         Result r = run(null, "-m", map.toString(), write(dir, "a.js", JS).toString());
         assertEquals(0, r.exit, r.toString());
-        assertEquals("\ta: beta\n\tb: alpha\n", new String(Files.readAllBytes(map), StandardCharsets.UTF_8),
+        // The leading "f: f" is the function's own name; see CompressorApiTest's
+        // theMungemapOverloadWritesTheOriginalToMungedMapping for why it is listed.
+        assertEquals("f: f\n\ta: beta\n\tb: alpha\n", new String(Files.readAllBytes(map), StandardCharsets.UTF_8),
                 "the mungemap is the only way a caller can reverse the renaming, so its exact shape is a contract");
     }
 

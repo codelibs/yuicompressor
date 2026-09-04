@@ -48,8 +48,8 @@ class JsGoldenFileTest {
      *
      * <p><b>jquery-1.6.4.js</b> - does not, and is not expected to, match
      * byte-for-byte: the golden was produced by a different compressor
-     * generation. Measured after this release's fixes, ours is 104,770 bytes
-     * against a golden of 101,992, a gap of 2,778 (2.7%); it was 137,798 before
+     * generation. Measured after this release's fixes, ours is 104,815 bytes
+     * against a golden of 101,992, a gap of 2,823 (2.8%); it was 137,798 before
      * the ScopeBuilder traversal fix. Composition of the gap, measured over both
      * files:
      *
@@ -152,7 +152,11 @@ class JsGoldenFileTest {
         new JavaScriptCompressor(new StringReader(source), SILENT).compress(out, -1, true, false, false, false);
         String compressed = out.toString();
 
-        assertEquals(104770, compressed.getBytes(StandardCharsets.UTF_8).length,
+        // 104,770 until a function's own name started being reserved. Reserving it
+        // costs 45 bytes here - some locals fall back to a two-character name - and
+        // buys back a local that was being munged to the name of the function beside
+        // it. Correctness at 0.04%.
+        assertEquals(104815, compressed.getBytes(StandardCharsets.UTF_8).length,
                 "jQuery output size changed; if this is an improvement, update this and the gap table above");
         assertEquals(0, count(compressed, "{{"),
                 "a redundant brace pair is back; see the D1 entry in the gap table above");

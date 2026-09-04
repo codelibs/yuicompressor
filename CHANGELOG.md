@@ -99,6 +99,23 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   token before the lowercasing pass runs, so `@PROPERTY --c {...}` passes through unchanged. That
   whole-block preservation is deliberate (a descriptor value is an arbitrary token stream), so the
   claim is corrected here rather than the behaviour
+- An escaped `@` in a selector no longer corrupts the rule after an empty one. Empty-rule removal
+  matched an at-rule prelude with a separate `@`-anchored alternative, and `@` is an ordinary
+  character in a class name once escaped, so the only `@` in `.\@container{}` sat in the middle of
+  a plain prelude that no alternative could match. The `@` alternative matched from the `@` onward,
+  and deleting `@container{}` welded the leftover `.\` to the next rule: `.\@container{}p{color:red}`
+  came out as `.\p{color:red}`. Tailwind emits such class names by the hundred (`.\@lg\:block`)
+- An unquoted `url()` containing `{`, `}` or `;` no longer leaves the rest of the stylesheet
+  unminified. The custom-property scan had no notion of strings or URL tokens, so `url(/x/;--y.png)`
+  put a `--` straight after a `;` and read as a declaration; the search for its `:` then ran out of
+  the URL into the next rule's `b:hover`, and the value scan ran from there to end-of-input,
+  preserving all of it verbatim with exit code 0. An unbalanced brace did the same to a real custom
+  property, `url(a}b.png)` driving the value scan past the `}` that ended the declaration. The scan
+  now uses the same string/URL region model as comment collection and line breaking
+- Minifying a stylesheet of `@property` rules is linear again, not quadratic. Those blocks are
+  preserved whole by this release, so a stylesheet of them collapses to one long run of placeholder
+  text with no brace in it, and the empty-rule prelude had to be retried from every offset inside
+  the run. 800 `@property` rules took 3.2s; doubling the count multiplied the time by 3.9
 
 ### Fixed (JavaScript)
 - Optional chaining is preserved and no longer widened: `a?.b.c` now stays `a?.b.c` instead of
@@ -116,7 +133,7 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   compressed to `function f(c,b){var a=alpha ?? beta;...}`, and
   `config.timeout ?? config.server?.timeout` to `config.server.timeout`, turning a safe
   `undefined` into a `TypeError`. All six are now handled, and a new opt-in strict mode
-  (`-Dyuicompressor.strict`) makes any *future* unhandled node type throw instead of degrading
+  (`-Dyuicompressor.strict=true`) makes any *future* unhandled node type throw instead of degrading
   silently - the test suite runs the whole fixture corpus plus a modern-syntax table with it on
 - Default and rest parameters are no longer dropped. `function f(a=1)` compressed to
   `function f(a)`, changing `f()` from `1` to `undefined`, and `function f(...args)` to
@@ -174,6 +191,31 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
 - Locals visible to `eval` or `with` are no longer munged, restoring the safety the README promises
   for those constructs (direct `eval` can read any local in its scope chain by name; `with` can
   dynamically shadow one)
+- A function's own name is no longer handed out as a free symbol. `ScopeBuilder` never declared it,
+  so the munger treated it as unused: `function f(x){...}` beside six locals produced `var f=1`, and
+  the `f(...)` call next to it then read the variable. A declaration's name is now declared in the
+  enclosing scope and a named function expression's in its own, which is also what makes a recursive
+  self-call resolve to the function rather than to the outer variable - `var s = function s(n){...
+  s(n-1) ...}` had its self-call rewritten to the outer binding, so reassigning that binding changed
+  what the recursion called. The name is reserved rather than renamed, in the declaring scope and in
+  every enclosing scope that gets munged, because an outer variable munged to the same spelling is
+  shadowed by the function inside its own body. jQuery 1.6.4 costs 45 bytes (0.04%) for this
+- Strict mode reads its property as a boolean. `isStrict()` only tested it for non-null, so
+  `-Dyuicompressor.strict=false` - and `0`, `off`, `no`, and the empty string a shell leaves behind
+  for a bare `-Dyuicompressor.strict` - all turned strict mode ON, and the compressor refused files
+  it compresses fine by default. Only `true` enables it now
+
+### Fixed (command line)
+- A refusal no longer destroys the file it was writing. The destination was opened, and therefore
+  truncated, before the compression that can fail, so a stylesheet this release declines to guess at
+  left an empty output file - and with `-o` pointing at the input, an empty source file: 29 bytes to
+  0. The compressed text is now produced in full before the destination is opened
+- A refusal is reported as an error, not as an uncaught exception. `IllegalArgumentException` left
+  `main` and printed `Exception in thread "main"` with a stack trace over a message written to be
+  read; it is now printed as `[ERROR] <file>: <message>` with a non-zero exit
+- Every input file reaches stdout. The per-file writer wrapped `System.out` and was closed after the
+  first file, so every later file in the same run wrote to a closed stream and was silently
+  discarded - `yuicompressor a.css b.css` emitted only `a.css`. Pre-existing, not a regression
 
 ### Improved
 - Function expressions passed as call arguments, object property values, and array elements now
@@ -182,7 +224,7 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
 - Redundant brace pairs are gone. Rhino wraps a loop, if- or do-body that declares anything in a
   `Scope`, which does not extend `Block`, so an `instanceof Block` check missed it and wrapped an
   already-braced block in a second pair: `for(...){f();}` came out as `for(...){{f();}}`. jQuery
-  1.6.4 measured 106,970 -> 104,770 bytes, with the `{{` count going 1,100 -> 0
+  1.6.4 measured 106,970 -> 104,815 bytes, with the `{{` count going 1,100 -> 0
 - `ScopeBuilder` now traverses default parameter expressions, which Rhino keeps in a side list
   rather than as children. A name read there is a real use, and an `eval` there is a real reason
   not to munge
@@ -309,7 +351,7 @@ bought, and it is the safe direction to fail in.
 - Skips are counted honestly. Disabling whole methods with `@EnabledIf` hid 35 real executions
   behind 3 skip lines; they are now skipped per case, so without node on `PATH` the report reads
   46 skipped rather than 5
-- A size and shape pin for `jquery-1.6.4.js` (`104,770` bytes, zero `{{`, 1,259 `;}`). It is
+- A size and shape pin for `jquery-1.6.4.js` (`104,815` bytes, zero `{{`, 1,259 `;}`). It is
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green

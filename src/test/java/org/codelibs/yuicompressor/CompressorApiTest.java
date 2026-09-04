@@ -125,7 +125,11 @@ class CompressorApiTest {
         new JavaScriptCompressor(new StringReader(SOURCE), SILENT)
                 .compress(out, map, -1, true, false, false, false, false);
         assertEquals("function f(b){var a=b;return a;}", out.toString());
-        assertEquals("\ta: beta\n\tb: alpha\n", map.toString(),
+        // "f: f" is the function declaration's own name, in the global scope and so
+        // never munged. It is listed because it is now a declared binding - reserving
+        // it is what stops a local being munged to "f" - and the mapping reports every
+        // binding it knows, renamed or not.
+        assertEquals("f: f\n\ta: beta\n\tb: alpha\n", map.toString(),
                 "the mapping is the only way to reverse the renaming; its exact shape is the contract");
     }
 

@@ -71,8 +71,17 @@ public class MungedCodeGenerator {
         }
     }
 
+    /**
+     * Whether strict mode is on. The property is read as a boolean, not merely
+     * tested for presence: {@code -Dyuicompressor.strict=false} has to mean OFF.
+     * Presence alone used to mean ON, so every spelling a person reaches for to
+     * disable a flag - {@code false}, {@code 0}, {@code off}, {@code no}, and the
+     * empty string a shell leaves behind for a bare {@code -Dyuicompressor.strict}
+     * - turned it on instead, and the compressor refused files it compresses fine
+     * by default. Only {@code true} (in any case) enables it.
+     */
     private static boolean isStrict() {
-        return System.getProperty(STRICT_PROPERTY) != null;
+        return Boolean.parseBoolean(System.getProperty(STRICT_PROPERTY));
     }
 
     private ScopeBuilder scopeBuilder;
