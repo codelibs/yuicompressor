@@ -359,4 +359,67 @@ class ModernCssTest {
         assertEquals("a{background:myurl(x)}b{color:red}",
                 compress("a{background:myurl(x)}/* note */b{color:#ff0000}"));
     }
+
+    // url("...") is a <function-token>, not a url-token (CSS Syntax L3 4.3.4), so its
+    // contents are ordinary tokens and a comment among them is an ordinary comment.
+    // Raw-scanning it for ")" desynced the collector and emitted an unterminated "/*".
+
+    @Test
+    void aCommentInsideAQuotedUrlDoesNotLeaveAnUnterminatedCommentOpener() throws Exception {
+        // The comment holds a ")" and then a second "/*". The raw scan stopped at that
+        // inner ")", resumed inside the comment, and deleted the only "*/" in the file,
+        // so a browser discarded .nav and .footer. Exit code was 0.
+        String result = compress(".hero { background-image: url(\"a.png\" /* legacy: url(b.png) /* keep */); }\n"
+                + ".nav { color: #ff0000; }\n.footer { margin: 0px; }");
+        assertEquals(".hero{background-image:url(\"a.png\")}.nav{color:red}.footer{margin:0}", result, result);
+        assertTrue(result.indexOf("/*") < 0, "an unterminated comment opener survived: " + result);
+    }
+
+    @Test
+    void aQuotedUrlCarryingAQuoteInsideItsCommentDoesNotFailTheBuild() throws Exception {
+        // Valid CSS. The phantom string opened by the '"' inside the comment swallowed
+        // the real "*/", so the unterminated-comment throw fired on a legal stylesheet.
+        assertEquals("a{background:url(\"x\")}b{content:\"/*\"}",
+                compress("a{background:url(\"x\" /* ) \" */)}b{content:\"/*\"}"));
+        assertEquals("@import url(\"a.css\");b{content:\"/*\"}",
+                compress("@import url(\"a.css\" /* ) \" */);b{content:\"/*\"}"));
+    }
+
+    @Test
+    void aCommentInsideAQuotedUrlIsCollectedAndRemoved() throws Exception {
+        assertEquals("a{background:url(\"x.png\")}b{color:red}",
+                compress("a{background:url(\"x.png\" /* don't ship me */)}b{color:#ff0000}"));
+        assertEquals("a{background:url('x.png')}b{color:red}",
+                compress("a{background:url('x.png' /* n */)}b{color:#ff0000}"));
+    }
+
+    @Test
+    void whitespaceBetweenUrlAndItsQuoteStillMakesItAFunctionToken() throws Exception {
+        // 4.3.4 skips whitespace before deciding, and the match is case-insensitive.
+        assertEquals("a{background:url(\"x.png\")}b{color:red}",
+                compress("a{background:url(  \n  \"x.png\" /* n */ )}b{color:#ff0000}"));
+        assertEquals("a{background:url('x.png')}b{color:red}",
+                compress("a{background:Url( 'x.png' /* n */)}b{color:#ff0000}"));
+    }
+
+    @Test
+    void aCommentLikeSpanInsideAnUnquotedUrlIsStillNotAComment() throws Exception {
+        // The other half of the split: only the unquoted form is raw. Scanning this one
+        // by the spec's bad-url rule instead - stopping at the ")" inside the attribute -
+        // resumes the collector inside the URL and deletes "/*x*/" from it.
+        String source = "a{background:url(data:image/svg+xml,<svg xmlns=\"a)b/*x*/c\"/>)}d{color:#ff0000}";
+        String result = compress(source);
+        assertTrue(result.contains("/*x*/"), "URL bytes were deleted as a comment: " + result);
+        assertEquals("a{background:url(data:image/svg+xml,<svgxmlns=\"a)b/*x*/c\"/>)}d{color:red}", result, result);
+    }
+
+    @Test
+    void anUnterminatedCommentInsideAQuotedUrlIsRejectedRatherThanEmitted() throws Exception {
+        // Now that the quoted form is scanned normally, this reaches the loud path. It
+        // used to be emitted verbatim, leaving an unterminated "/*" in shippable CSS
+        // with exit code 0 - the corruption the throw exists to prevent.
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> compress("a{background:url(\"x\" /* oops)}b{color:#ff0000}"));
+        assertTrue(failure.getMessage().contains("unterminated CSS comment"), failure.getMessage());
+    }
 }

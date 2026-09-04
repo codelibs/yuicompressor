@@ -481,22 +481,71 @@ public class CssCompressor {
     }
 
     /**
-     * Whether a {@code url(} function token starts at {@code i}. The preceding
-     * character must not be an identifier character, so {@code myurl(} is not
-     * mistaken for one.
+     * Whether a url-token - the raw-content form - starts at {@code i}. Two
+     * conditions, both from CSS Syntax Level 3 &sect;4.3.4 "consume an
+     * ident-like token":
+     *
+     * <ul>
+     * <li>The preceding character must not be an identifier character, so
+     * {@code myurl(} is not mistaken for one.
+     * <li>The {@code url(} must not be followed, after any amount of
+     * whitespace, by a quote. {@code url("a.png")} is an ordinary
+     * {@code <function-token>} whose contents are ordinary tokens - strings,
+     * comments, and the closing {@code )} - so the main loop has to scan it
+     * with the normal rules. Only the unquoted form is a url-token whose
+     * content is consumed raw, and only that form may be handed to
+     * {@link #skipUrlToken}.
+     * </ul>
+     *
+     * <p>Getting the second condition wrong is not a missed optimisation: a
+     * comment inside a quoted {@code url()} desynced the raw scan, and the
+     * collector then deleted the tail of an unrelated comment, leaving an
+     * unterminated {@code /*} in shippable CSS with exit code 0.
      */
     private static boolean startsUrlToken(String css, int i) {
         if (!css.regionMatches(true, i, "url(", 0, 4)) {
             return false;
         }
-        if (i == 0) {
+        if (i > 0) {
+            char prev = css.charAt(i - 1);
+            if (Character.isLetterOrDigit(prev) || prev == '-' || prev == '_') {
+                return false;
+            }
+        }
+        int j = i + 4;
+        while (j < css.length() && isCssSpace(css.charAt(j))) {
+            j++;
+        }
+        if (j >= css.length()) {
             return true;
         }
-        char prev = css.charAt(i - 1);
-        return !(Character.isLetterOrDigit(prev) || prev == '-' || prev == '_');
+        char next = css.charAt(j);
+        return next != '"' && next != '\'';
     }
 
-    /** Index just past the closing ")", or the end of input if unterminated. */
+    /**
+     * Index just past the closing ")" of an unquoted url-token, or the end of
+     * input if unterminated. Only ever reached where {@link #startsUrlToken}
+     * says the raw form starts, so no comment is recognised inside it - which
+     * is exactly what makes {@code url(/x/}{@code *!k*}{@code /a.png)} not a
+     * comment.
+     *
+     * <p>The quote handling looks like a spec deviation and is deliberate.
+     * Strictly, a quote inside this form is a parse error: the token becomes a
+     * bad-url-token whose remnants are consumed to the first unescaped ")"
+     * (CSS Syntax Level 3 &sect;4.3.14), so a spec-literal scan would ignore
+     * quotes entirely. Doing that was measured, and it silently deletes URL
+     * bytes: in
+     * {@code url(data:image/svg+xml,<svg xmlns="a)b/}{@code *x*}{@code /c"/>)}
+     * the spec-literal scan ends the token at the ")" inside the attribute,
+     * the main loop then resumes <em>inside the URL</em>, and
+     * {@code /}{@code *x*}{@code /} is collected and deleted as a comment -
+     * defect A of {@code 9b56de5}, reintroduced. Stepping over the quoted span
+     * instead cannot delete anything: its only failure mode is ending the
+     * token late, which suppresses comment collection (a leak) rather than
+     * causing it (corruption). On malformed input this errs toward emitting
+     * too much, which is the safe direction.
+     */
     private static int skipUrlToken(String css, int start) {
         int i = start + 4; // past "url("
         while (i < css.length()) {
