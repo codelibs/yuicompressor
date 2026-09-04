@@ -2,15 +2,11 @@ package org.codelibs.yuicompressor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mozilla.javascript.ErrorReporter;
@@ -38,6 +34,23 @@ import com.yahoo.platform.yui.compressor.JavaScriptCompressor;
  * catching its own exceptions, so that "threw" is an observable outcome rather
  * than a difference in a stack trace. jquery-1.6.4.js and friends cannot
  * participate: they need a DOM.
+ *
+ * <p><b>What this class cannot detect, by construction.</b> It compares source
+ * behaviour against compressed behaviour, so a compressor that does nothing at
+ * all trivially agrees with itself. Proven by mutation rather than argued:
+ * making {@code compress} echo its input leaves this class green, and so does
+ * disabling munging entirely. It detects SEMANTIC CHANGE under compression and
+ * nothing else - never under-compression, never a dead munger, never a missed
+ * optimisation like the D1 double braces.
+ *
+ * <p>That is inherent to differential testing and is not a defect to be fixed
+ * here; contorting these cases into compression assertions would cost the
+ * property that makes them valuable. The other half of the net is what covers
+ * it: the golden fixtures ({@link JsGoldenFileTest}, {@link CssGoldenFileTest})
+ * pin exact bytes, {@link ParameterListTest} and {@link ModernJsTest} pin exact
+ * output, and disabling munging fails 25 of them across five classes. Neither
+ * half is "the safety net" on its own, and this class should not be described
+ * as one.
  */
 class DifferentialExecutionTest {
 
@@ -53,15 +66,18 @@ class DifferentialExecutionTest {
         }
     };
 
-    static boolean nodeAvailable() {
-        try {
-            return new ProcessBuilder("node", "--version").start().waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
+    /**
+     * Skips one case when node is absent, rather than disabling the whole
+     * method with {@code @EnabledIf}. That reported "Tests run: 2, Skipped: 2"
+     * for 23 real executions, so a green build looked far better covered than
+     * it was; a per-case assumption makes the skipped count the real count.
+     * {@link NodeRuntime#isAvailable()} throws rather than returning false when
+     * node is present but broken.
+     */
+    private static void requireNode() {
+        Assumptions.assumeTrue(NodeRuntime.isAvailable(), "node is not on PATH; this execution did not run");
     }
 
-    @EnabledIf("nodeAvailable")
     @ParameterizedTest
     @ValueSource(strings = {
             // C1: "??" reached the toSource() fallback, which re-printed the
@@ -126,11 +142,18 @@ class DifferentialExecutionTest {
             // future change to the discriminator cannot quietly break them.
             "function f({ k: someKey = 5 }) { return someKey; }\nconsole.log(f({}), f({k: 9}));",
             "function f([ someKey = 5 ]) { return someKey; }\nconsole.log(f([]), f([9]));",
-            // Redundant double braces were semantically neutral, so this is a
-            // guard rather than a reproduction.
+            // Ordinary loop and labelled-continue behaviour. These two used to
+            // carry a comment calling them guards for the D1 double-brace
+            // change; they are not, and no test in this class could be.
+            // Reverting D1 leaves this class fully green, because "{{f();}}"
+            // and "{f();}" behave identically - the extra braces are a missed
+            // optimisation, not a semantic change, and this class only detects
+            // semantic change. What actually pins D1 is the exact-output tests
+            // in ModernJsTest (aBracedLoopBodyDoesNotGainASecondBracePair and
+            // its four siblings); reverting D1 fails eight of them. Measured,
+            // not assumed. Kept because loop and label semantics are worth
+            // running, under an honest description.
             "var out = [];\nfor (var i=0;i<3;i++) { out.push(i); }\nconsole.log(out.join(','));",
-            // A labelled break out of a nested loop, whose braces the same
-            // change touched.
             "var out = [];\nouter: for (var i=0;i<3;i++) { for (var j=0;j<3;j++) { if (j===1) continue outer; out.push(i+'-'+j); } }\n"
                     + "console.log(out.join(','));",
             // Array elisions: a trailing hole is a slot, and dropping it
@@ -157,6 +180,7 @@ class DifferentialExecutionTest {
             "function f(){ var secretName = 42; return eval('secretName'); }\nconsole.log(f());",
             "function f(obj){ var x = 5; with (obj) { return x; } }\nconsole.log(f({}), f({x: 9}));" })
     void compressedScriptBehavesLikeItsSource(String source) throws Exception {
+        requireNode();
         assertSameBehaviour(source, compress(source, -1));
     }
 
@@ -165,7 +189,6 @@ class DifferentialExecutionTest {
      * token is the C2 defect, and its identifier-splitting variant produces
      * output that still parses - so only running it can tell the two apart.
      */
-    @EnabledIf("nodeAvailable")
     @ParameterizedTest
     @ValueSource(strings = { "var out = [];\nvar q = 1 + + +function(){ out.push('abcdefghijklmnop'); }();\n"
             + "console.log(out.join(','));",
@@ -173,12 +196,13 @@ class DifferentialExecutionTest {
                     + "console.log(out.join(','));",
             "var alpha=1; var beta=2; var gamma=alpha+beta; console.log(alpha, beta, gamma);" })
     void compressedScriptBehavesLikeItsSourceWithLineBreaks(String source) throws Exception {
+        requireNode();
         assertSameBehaviour(source, compress(source, 20));
     }
 
     private void assertSameBehaviour(String source, String compressed) throws Exception {
-        String fromSource = run(source);
-        String fromCompressed = run(compressed);
+        String fromSource = NodeRuntime.run(source);
+        String fromCompressed = NodeRuntime.run(compressed);
         assertEquals(fromSource, fromCompressed,
                 "compressed output does not behave like its source.\nsource:\n" + source + "\ncompressed:\n"
                         + compressed);
@@ -191,27 +215,4 @@ class DifferentialExecutionTest {
         return out.toString();
     }
 
-    /**
-     * Runs a script under node and returns its stdout plus exit status. The
-     * exit status is part of the comparison so that a compressed script which
-     * throws where its source did not is a difference; stderr is not, because a
-     * stack trace carries file names and line numbers that legitimately differ.
-     */
-    private String run(String code) throws Exception {
-        File temp = File.createTempFile("yui-diff-", ".js");
-        try {
-            Files.write(temp.toPath(), code.getBytes(StandardCharsets.UTF_8));
-            Process node = new ProcessBuilder("node", temp.getAbsolutePath()).start();
-            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            byte[] chunk = new byte[4096];
-            int read;
-            while ((read = node.getInputStream().read(chunk)) != -1) {
-                buffer.write(chunk, 0, read);
-            }
-            int status = node.waitFor();
-            return "exit=" + status + "\n" + new String(buffer.toByteArray(), StandardCharsets.UTF_8);
-        } finally {
-            temp.delete();
-        }
-    }
 }

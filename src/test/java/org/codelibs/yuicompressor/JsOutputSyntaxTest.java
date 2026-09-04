@@ -2,7 +2,6 @@ package org.codelibs.yuicompressor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -16,8 +15,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mozilla.javascript.ErrorReporter;
@@ -46,12 +45,16 @@ class JsOutputSyntaxTest {
         }
     };
 
-    static boolean nodeAvailable() {
-        try {
-            return new ProcessBuilder("node", "--version").start().waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
+    /**
+     * Skips one fixture when node is absent, rather than disabling the whole
+     * method with {@code @EnabledIf}, which hid 10 real node --check
+     * executions behind a single skip line. {@link NodeRuntime#isAvailable()}
+     * throws rather than returning false when node is present but broken, so a
+     * sandboxed or hanging node fails the build instead of quietly disabling
+     * this guard.
+     */
+    private static void requireNode() {
+        Assumptions.assumeTrue(NodeRuntime.isAvailable(), "node is not on PATH; this fixture was not checked");
     }
 
     static Stream<String> fixtures() throws IOException {
@@ -64,10 +67,10 @@ class JsOutputSyntaxTest {
         }
     }
 
-    @EnabledIf("nodeAvailable")
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
     void compressedOutputParses(String fixture) throws Exception {
+        requireNode();
         String source = new String(Files.readAllBytes(RESOURCES.resolve(fixture)), StandardCharsets.UTF_8);
 
         // Some fixtures are not valid JavaScript to begin with. Rhino is lenient
@@ -606,27 +609,12 @@ class JsOutputSyntaxTest {
         return !nodeCheck(code).isEmpty();
     }
 
-    /** Runs "node --check" and returns its combined output, empty when it parses. */
+    /**
+     * Runs "node --check" and returns its combined output, empty when it
+     * parses. Bounded and redirected to a file by {@link NodeRuntime}, so a
+     * hanging node fails rather than stalling the build.
+     */
     private static String nodeCheck(String code) throws Exception {
-        File temp = File.createTempFile("yui-syntax-", ".js");
-        try {
-            Files.write(temp.toPath(), code.getBytes(StandardCharsets.UTF_8));
-            Process check = new ProcessBuilder("node", "--check", temp.getAbsolutePath())
-                    .redirectErrorStream(true).start();
-            String output = new String(readAll(check), StandardCharsets.UTF_8);
-            return check.waitFor() == 0 ? "" : output;
-        } finally {
-            temp.delete();
-        }
-    }
-
-    private static byte[] readAll(Process process) throws IOException {
-        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-        byte[] chunk = new byte[4096];
-        int read;
-        while ((read = process.getInputStream().read(chunk)) != -1) {
-            buffer.write(chunk, 0, read);
-        }
-        return buffer.toByteArray();
+        return NodeRuntime.check(code);
     }
 }
