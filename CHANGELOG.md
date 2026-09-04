@@ -18,6 +18,21 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   as well: the first version of this fix accepted only `{` and `;` as the preceding character,
   so `:root{/*! v1 */--brand:#ff0000}` still became `--brand:red` and `:root{/*! x */--pad:0px}`
   still became `--pad:0`, which breaks `calc(var(--pad) + 1px)`
+- Comment collection is string- and URL-aware, fixing two defects that were really one: the scan
+  was context-free and ran before string and URL handling. A comment-looking span inside a string
+  or an unquoted `url()` was collected as a comment, and the resulting placeholder then sat
+  mid-value while *looking* like a leading banner comment - which defeated the at-rule and
+  declaration boundary checks below at all four of their call sites.
+  `url(/x/`+`/*!k*/`+`@charset "y";.png)` invented a stylesheet encoding out of a URL fragment and
+  deleted the fragment from the URL
+- **An unterminated `/*` no longer truncates the stylesheet.** The same scan replaced everything
+  from an unclosed `/*` to end-of-input with an internal placeholder that nothing removed, so the
+  output was cut short, the following rules were lost, internal scaffolding was emitted into
+  shippable CSS, and the exit code was 0. `a{content:"/*"}` - valid CSS - was enough to trigger it,
+  as was a data URL carrying an unclosed `/*`. Both are now handled structurally. A comment that is
+  genuinely unterminated outside any string or URL is rejected with an error naming the offset:
+  browsers consume such a comment to end-of-input, so the stylesheet is already broken either way,
+  and silently discarding the rest of the file is the behaviour this release exists to remove
 - At-rules and declarations are now only recognised where one can actually begin - after `}`,
   `;`, `{`, a preserved-token placeholder, or the start of the stylesheet. Matching their literal
   text anywhere it appeared meant `a { background: url(/img/@property.png) }` was treated as an
@@ -176,7 +191,7 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green
-- Test suite grew from 163 to 492 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+- Test suite grew from 163 to 503 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
   parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
