@@ -1088,7 +1088,7 @@ public class MungedCodeGenerator {
             return;
         }
         if (operator.equals("<") && startsWithAnnexBOpenComment(mark)) {
-            output.insert(mark, ' ');
+            insertSeparator(mark);
             return;
         }
         char operatorLastChar = operator.charAt(operator.length() - 1);
@@ -1109,7 +1109,32 @@ public class MungedCodeGenerator {
                 break;
         }
         if (merges) {
-            output.insert(mark, ' ');
+            insertSeparator(mark);
+        }
+    }
+
+    /**
+     * Inserts the separating space at {@code mark} and shifts every already
+     * recorded safe-break offset that sits at or after it.
+     *
+     * <p>The operand was rendered before the separator is inserted, so any
+     * statement boundary inside it (a nested function expression's body, for
+     * instance) has already been recorded at its pre-insertion offset. Without
+     * this shift every such offset lands one character early per separator
+     * inserted before it, and {@code addLineBreaks} then cuts inside the
+     * preceding token - splitting an identifier, or worse, a string literal,
+     * whose closing quote ends up on the next line. Both were reachable at
+     * {@code --line-break 20} with two nested insertions, and only the second
+     * is a hard SyntaxError; the first still parses.
+     */
+    private void insertSeparator(int mark) {
+        output.insert(mark, ' ');
+        for (int i = safeBreakOffsets.size() - 1; i >= 0; i--) {
+            int offset = safeBreakOffsets.get(i);
+            if (offset < mark) {
+                break; // the list is ascending, so nothing earlier can match
+            }
+            safeBreakOffsets.set(i, offset + 1);
         }
     }
 

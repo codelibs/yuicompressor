@@ -10,8 +10,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
+import org.mozilla.javascript.CompilerEnvirons;
+import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ErrorReporter;
 import org.mozilla.javascript.EvaluatorException;
+import org.mozilla.javascript.Parser;
 
 import com.yahoo.platform.yui.compressor.JavaScriptCompressor;
 
@@ -161,6 +164,88 @@ class ModernJsTest {
             count++;
         }
         assertEquals(2, count, "an identifier was split across a line break: " + result);
+        assertEveryLineBreakIsAtAStatementBoundary(result);
+    }
+
+    // The two cases above the fix: the generator records a safe-break offset
+    // as soon as a statement inside the nested function body is complete, but
+    // insertSeparatorIfMerging then inserted its separating space at an
+    // EARLIER offset without adjusting the recorded ones. Every recorded break
+    // therefore landed k characters early, k being the number of separators
+    // inserted before it. "a + + +function(){...}" needs two of them, so the
+    // break lands two characters inside the preceding token.
+    //
+    // Both are the same defect and only the second is loud: splitting an
+    // identifier leaves output that still PARSES (as two statements naming two
+    // different variables), while splitting a string literal puts its closing
+    // quote on the next line and is a hard SyntaxError.
+
+    @Test
+    void lineBreakNeverSplitsAnIdentifierAfterNestedSeparatorInsertions() throws Exception {
+        String result = compressAt(20, "var q = a + + +function(){ abcdefghijklmnop; }();");
+        assertEquals("var q=a+ + +function(){abcdefghijklmnop;\n}\n();", result, result);
+        assertParses(result);
+        assertEveryLineBreakIsAtAStatementBoundary(result);
+    }
+
+    @Test
+    void lineBreakNeverSplitsAStringLiteralAfterNestedSeparatorInsertions() throws Exception {
+        String result = compressAt(20, "var q = a + + +function(){ var s = \"hello\"; }();");
+        assertEquals("var q=a+ + +function(){var a=\"hello\";\n}\n();", result, result);
+        assertParses(result);
+        assertEveryLineBreakIsAtAStatementBoundary(result);
+    }
+
+    @Test
+    void lineBreakIsCorrectWithASingleSeparatorInsertion() throws Exception {
+        // k=1 rather than k=2, so the break is one character early rather than
+        // two - the same defect at a different magnitude, and the case that
+        // shows the fix is a per-separator shift, not a fixed correction.
+        String result = compressAt(20, "var q = a + +function(){ abcdefghijklmnop; }();");
+        assertEquals("var q=a+ +function(){abcdefghijklmnop;\n}\n();", result, result);
+        assertParses(result);
+        assertEveryLineBreakIsAtAStatementBoundary(result);
+    }
+
+    private String compressAt(int linebreakpos, String source) throws Exception {
+        StringWriter out = new StringWriter();
+        new JavaScriptCompressor(new StringReader(source), SILENT)
+                .compress(out, linebreakpos, true, false, false, false);
+        return out.toString();
+    }
+
+    /**
+     * Every offset the generator records is taken immediately after a
+     * statement has finished - its trailing ";" already appended when one is
+     * needed, or its closing "}" already written - so the character preceding
+     * an inserted newline can only be ";" or "}". A break landing anywhere
+     * else is by definition inside a token.
+     */
+    private void assertEveryLineBreakIsAtAStatementBoundary(String result) {
+        for (int i = 0; i < result.length(); i++) {
+            if (result.charAt(i) != '\n') {
+                continue;
+            }
+            char before = i == 0 ? '\0' : result.charAt(i - 1);
+            assertTrue(before == ';' || before == '}',
+                    "line break at offset " + i + " follows '" + before
+                            + "', so it does not fall on a statement boundary: " + result);
+        }
+    }
+
+    /**
+     * Re-parses with Rhino, which is always available here (unlike node).
+     * Parsing alone is not sufficient for these cases - a split identifier
+     * still parses, as two statements naming two different variables - which
+     * is why {@link #assertEveryLineBreakIsAtAStatementBoundary} carries the
+     * rest of the weight.
+     */
+    private void assertParses(String result) {
+        CompilerEnvirons env = new CompilerEnvirons();
+        env.setRecordingComments(false);
+        env.setLanguageVersion(Context.VERSION_ES6);
+        env.setErrorReporter(SILENT);
+        new Parser(env, SILENT).parse(result, "compressed", 1);
     }
 
     @Test
