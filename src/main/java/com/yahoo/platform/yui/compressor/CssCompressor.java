@@ -262,12 +262,40 @@ public class CssCompressor {
      * way, which is why this is one shared helper rather than a check repeated
      * per matcher.
      *
-     * <p>The preserved-token case is not optional. By the time these passes
-     * run, a leading comment or string is already a placeholder, so a custom
-     * property declaration or an at-rule written directly after a preserved
-     * "/*!" banner is preceded by that placeholder rather than by "{" or "}".
-     * Omitting it is exactly how custom property values stopped being
-     * preserved when a preserved token preceded them.
+     * <p>A preserved COMMENT also forms a boundary, and that case is not
+     * optional: by the time these passes run, a leading comment is already a
+     * placeholder, so a declaration or at-rule written directly after a
+     * preserved "/*!" banner is preceded by that placeholder rather than by
+     * "{" or "}". Omitting it is exactly how custom property values stopped
+     * being preserved when a preserved token preceded them.
+     *
+     * <p>A preserved comment is the ONLY placeholder form that counts here.
+     * Enumerated from the preservation passes that run before these scans,
+     * three textual forms exist at this point, and only the first can
+     * legitimately precede a declaration or at-rule:
+     *
+     * <ul>
+     * <li>"/*" + placeholder + "*" + "/" - a preserved "/*!" banner, the
+     * Mac/IE5 backslash hack, or the IE7 "&gt;/**" + "/" hack. Real: a banner
+     * can sit between "{" and a declaration.
+     * <li>a quoted placeholder - a preserved string literal. NOT a boundary: a
+     * string abutting a declaration or at-rule ("a{content:\"x\"--y:1}") is not
+     * valid CSS, and a string in a value is followed by ";" or "}", which is
+     * already a boundary. Accepting it reintroduces the very defect this
+     * method fixes - "url(/x/\"y\"@property.png)" is then read as an at-rule
+     * and the FOLLOWING rule is left unminified.
+     * <li>a bare placeholder - the "\9" hack, or the inside of a preserved
+     * "url(...)". NOT a boundary either: "\9" ends a declaration value so a
+     * ";" or "}" follows it, and a bare placeholder inside "url(...)" is
+     * followed by ")".
+     * </ul>
+     *
+     * <p>An ordinary (non-preserved) comment never reaches this test at all:
+     * it is deleted whole, "/*" and "*" + "/" included, by the "kill the
+     * comment" pass, so "{" ends up directly adjacent to what follows it. That
+     * is why routine CSS such as ":root{/* note *" + "/--pad:0px}" was never
+     * affected by the defect this method fixes, and must not start being
+     * affected by the fix.
      */
     private static boolean startsAtBoundary(String css, int start, String boundaries) {
         int before = start - 1;
@@ -277,27 +305,30 @@ public class CssCompressor {
         if (before < 0) {
             return true;
         }
-        return boundaries.indexOf(css.charAt(before)) >= 0 || endsWithPreservedToken(css, before + 1);
+        return boundaries.indexOf(css.charAt(before)) >= 0 || endsWithPreservedComment(css, before + 1);
     }
 
     /**
-     * Whether a complete "___YUICSSMIN_PRESERVED_TOKEN_n___" placeholder ends
-     * exactly at {@code endExclusive}. Checked structurally (trailing "___",
-     * then at least one index digit, then the prefix) rather than with a
-     * backwards regex, so a stylesheet that merely contains the prefix as
-     * literal text cannot be mistaken for one.
+     * Whether a preserved COMMENT ends exactly at {@code endExclusive} - the
+     * full text "/*" + "___YUICSSMIN_PRESERVED_TOKEN_n___" + "*" + "/".
      *
-     * <p>Preservation leaves the placeholder's delimiters in place: a preserved
-     * comment reads "/*" + placeholder + "*" + "/" and a preserved string keeps
-     * its quotes, so the closing delimiter is stepped over first.
+     * <p>BOTH delimiters are required, which is what keeps this to the one
+     * placeholder form that can legitimately precede a declaration or at-rule;
+     * see {@link #startsAtBoundary} for the enumeration of the three forms and
+     * why the other two must be rejected. Preservation leaves the delimiters in
+     * place because the comment pass replaces only the inner candidate marker.
+     *
+     * <p>Checked structurally (delimiter, trailing "___", at least one index
+     * digit, the prefix, opening delimiter) rather than with a backwards regex,
+     * so a stylesheet that merely contains the prefix as literal text cannot be
+     * mistaken for one.
      */
-    private static boolean endsWithPreservedToken(String css, int endExclusive) {
+    private static boolean endsWithPreservedComment(String css, int endExclusive) {
         int i = endExclusive;
-        if (i >= 2 && css.startsWith("*/", i - 2)) {
-            i -= 2;
-        } else if (i >= 1 && (css.charAt(i - 1) == '"' || css.charAt(i - 1) == '\'')) {
-            i--;
+        if (i < 2 || !css.startsWith("*/", i - 2)) {
+            return false;
         }
+        i -= 2;
         if (i < 3 || !css.startsWith("___", i - 3)) {
             return false;
         }
@@ -309,8 +340,10 @@ public class CssCompressor {
         if (i == digitsEnd) {
             return false;
         }
-        return i >= PRESERVED_TOKEN_PREFIX.length()
-                && css.startsWith(PRESERVED_TOKEN_PREFIX, i - PRESERVED_TOKEN_PREFIX.length());
+        int prefixStart = i - PRESERVED_TOKEN_PREFIX.length();
+        return prefixStart >= 2
+                && css.startsWith(PRESERVED_TOKEN_PREFIX, prefixStart)
+                && css.startsWith("/*", prefixStart - 2);
     }
 
     /**

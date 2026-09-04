@@ -220,4 +220,44 @@ class ModernCssTest {
         // not a declaration.
         assertEquals("a{width:calc(1px - -2px)}", compress("a{width:calc(1px --2px)}"));
     }
+
+    // Only a preserved COMMENT placeholder forms a boundary. Three placeholder
+    // forms exist by the time these passes run - comment, quoted string, bare -
+    // and the other two are not places a declaration or at-rule can begin.
+    // Accepting the quoted form reintroduced the @property defect through a
+    // different door, which is what these two pin down.
+
+    @Test
+    void aPreservedStringDoesNotMakeTheFollowingTextAnAtRule() throws Exception {
+        // With a quoted placeholder accepted as a boundary, the "@property"
+        // here was read as an at-rule and everything to the next balanced "}"
+        // preserved - leaving rule "b" unminified, exactly the I2 symptom.
+        String result = compress("a{background:url(/x/\"y\"@property.png)}b{color:#ff0000;margin:0px}");
+        assertEquals("a{background:url(/x/\"y\"@property.png)}b{color:red;margin:0}", result, result);
+    }
+
+    @Test
+    void aPreservedStringDoesNotStartACustomPropertyDeclaration() throws Exception {
+        // A string abutting a declaration is not valid CSS, so this "--y" is
+        // not a custom property and its value is not preserved.
+        String result = compress("a{content:\"x\"--y:0px}b{color:#ff0000}");
+        assertEquals("a{content:\"x\"--y:0}b{color:red}", result, result);
+    }
+
+    @Test
+    void anOrdinaryCommentBeforeACustomPropertyIsUnaffected() throws Exception {
+        // Routine CSS that never had the defect and must not acquire it: an
+        // ordinary comment is deleted whole, delimiters included, so the "{"
+        // ends up directly adjacent to the declaration and the boundary test
+        // is never consulted.
+        assertEquals(":root{--brand:#ff0000;--pad:0px}",
+                compress(":root{/* brand colour */--brand:#ff0000;--pad:0px}"));
+    }
+
+    @Test
+    void theIe7EmptyCommentHackStillSurvives() throws Exception {
+        // The other comment-shaped placeholder, kept as a guard on the
+        // narrowed detector.
+        assertEquals("html>/**/body{color:red}", compress("html >/**/ body{color:#ff0000}"));
+    }
 }
