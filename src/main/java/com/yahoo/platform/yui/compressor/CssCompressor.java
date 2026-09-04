@@ -614,17 +614,14 @@ public class CssCompressor {
         String css = srcsb.toString();
 
         int startIndex = 0;
-        int endIndex = 0;
         int i = 0;
         int max = 0;
         ArrayList preservedTokens = new ArrayList(0);
         ArrayList comments = new ArrayList(0);
         String token;
-        int totallen = css.length();
         String placeholder;
 
-
-        StringBuffer sb = new StringBuffer(css);
+        StringBuffer sb;
 
         // collect all comment blocks...
         css = collectComments(css, comments);
