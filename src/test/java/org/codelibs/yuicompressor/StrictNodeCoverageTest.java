@@ -136,6 +136,12 @@ class StrictNodeCoverageTest {
             "var o = { get x() { return 1; }, set x(v) { this.y = v; } };",
             // ES2019 optional catch binding.
             "function f(alpha) { try { return alpha(); } catch { return 0; } }",
+            // ES2020 BigInt. Harmless in the lenient path (a leaf with no
+            // identifiers inside), but strict mode could not compress any file
+            // containing one, which matters because strict mode is what
+            // Release 2 is meant to lean on.
+            "function f(alpha) { return 10n + alpha; }",
+            "function f(alpha) { return 0xffn + alpha; }",
             // Plain ES5 that used to reach the fallback via toSource().
             "function f(alpha) { debugger; return alpha; }" })
     void modernSyntaxDoesNotReachTheToSourceFallback(String source) throws Exception {
@@ -175,6 +181,30 @@ class StrictNodeCoverageTest {
         assertTrue(cause.getMessage().contains("ARRAYCOMP"), "message should name the node type: " + cause.getMessage());
         assertTrue(cause.getMessage().contains("ArrayComprehension"),
                 "message should name the node class: " + cause.getMessage());
+    }
+
+    /**
+     * The six node types that still have no handler, enumerated by sweeping
+     * the constructs Rhino 1.8.0 accepts rather than sampled. All are
+     * Rhino/E4X legacy no browser supports, and all are harmless in the
+     * lenient path, so they are recorded here instead of fixed - see
+     * {@link MungedCodeGenerator#STRICT_PROPERTY}. A seventh appearing, or one
+     * of these starting to compress, means a real change rather than a gap in
+     * the probe, and should fail here rather than be discovered later.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "function f(alpha) { return [i*alpha for (i in alpha)]; }",
+            "function f(alpha) { return (i*alpha for (i in alpha)); }",
+            "function f(alpha) { return <a b=\"1\">{alpha}</a>; }",
+            "function f(alpha) { return alpha::b; }",
+            "function f(alpha) { return alpha..b; }",
+            "function f(alpha) { return alpha.@b; }" })
+    void knownUnhandledNodeTypesThrowUnderStrictMode(String source) {
+        IOException failure = assertThrows(IOException.class, () -> compress(source),
+                "if this now compresses, move it into the supported table above: " + source);
+        assertTrue(rootCause(failure) instanceof MungedCodeGenerator.UnsupportedSyntaxException,
+                "expected UnsupportedSyntaxException, got " + rootCause(failure));
     }
 
     /**

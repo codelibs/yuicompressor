@@ -719,6 +719,59 @@ class ModernJsTest {
         assertEquals("var o={*[1+1](){yield 1;}};", compressNoMunge("var o = { *[1+1](){ yield 1; } };"));
     }
 
+    // Commas in an array literal are separators, so a trailing one is not an
+    // element - "[a,b,]" and "[a,b]" are both length 2. A trailing elision
+    // therefore needs an extra comma of its own, which the separator-only loop
+    // never emitted: "[,,b,]" is length 3 where the source was length 4.
+
+    @Test
+    void aTrailingElisionKeepsItsSlot() throws Exception {
+        assertEquals("var a=[,,b,,];", compressNoMunge("var a = [, , b, , ];"));
+    }
+
+    @Test
+    void aSingleElisionKeepsItsSlot() throws Exception {
+        assertEquals("var a=[,];", compressNoMunge("var a = [, ];"));
+        assertEquals("var a=[,,];", compressNoMunge("var a = [, , ];"));
+    }
+
+    @Test
+    void aTrailingCommaAfterARealElementIsStillDropped() throws Exception {
+        // The other direction: this comma is a separator, not a slot, so
+        // dropping it is correct and must keep happening.
+        assertEquals("var a=[1,2];", compressNoMunge("var a = [1, 2, ];"));
+        assertEquals("var a=[];", compressNoMunge("var a = [];"));
+    }
+
+    @Test
+    void anInteriorElisionIsUnchanged() throws Exception {
+        assertEquals("var a=[1,,2];", compressNoMunge("var a = [1, , 2];"));
+    }
+
+    @Test
+    void bigIntLiteralsKeepTheirForm() throws Exception {
+        assertEquals("var a=10n+0xffn;", compressNoMunge("var a = 10n + 0xffn;"));
+    }
+
+    // Two Mozilla-only legacy forms that were emitted wrongly rather than
+    // falling to the fallback, so the strict tripwire could not see them.
+
+    @Test
+    void forEachPutsItsKeywordBeforeTheParenthesis() throws Exception {
+        // "for(var a each in b)" is not valid syntax anywhere - this
+        // compressor's own parser rejects it - so it was invalid output
+        // emitted with exit 0.
+        String result = compressNoMunge("for each (var b in a) { f(b); }");
+        assertEquals("for each(var b in a){f(b);}", result, result);
+    }
+
+    @Test
+    void aCatchGuardIsNotDropped() throws Exception {
+        // Dropping the guard silently widens the catch to every exception.
+        String result = compressNoMunge("try { g(); } catch (e if e instanceof TypeError) { h(e); }");
+        assertEquals("try{g();}catch(e if e instanceof TypeError){h(e);}", result, result);
+    }
+
     @Test
     void debuggerStatementStaysOnOneLine() throws Exception {
         // Token.DEBUGGER used to reach the toSource() fallback, which emits

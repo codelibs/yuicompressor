@@ -133,6 +133,15 @@ class DifferentialExecutionTest {
             // change touched.
             "var out = [];\nouter: for (var i=0;i<3;i++) { for (var j=0;j<3;j++) { if (j===1) continue outer; out.push(i+'-'+j); } }\n"
                     + "console.log(out.join(','));",
+            // Array elisions: a trailing hole is a slot, and dropping it
+            // changes both the contents and .length of the array.
+            "function f(alpha) { var beta = [, , alpha, , ]; return JSON.stringify(beta) + '|' + beta.length; }\n"
+                    + "console.log(f(7));",
+            "console.log(JSON.stringify([,]), [,].length, JSON.stringify([,,]), [,,].length);",
+            "console.log(JSON.stringify([1,2,]), [1,2,].length, JSON.stringify([1,,2]), [1,,2].length);",
+            // BigInt arithmetic, which is exactly what a normalised literal
+            // would get wrong.
+            "console.log((9007199254740993n + BigInt(1)).toString(), (0xffn * 2n).toString());",
             // Generator object methods used to crash the compressor outright.
             "var o = { *gen(){ yield 1; yield 2; } };\n"
                     + "var out = [], it = o.gen(), r = it.next();\n"

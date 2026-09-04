@@ -28,6 +28,31 @@ public class MungedCodeGenerator {
      * suite runs the whole fixture corpus plus a modern-syntax table with it
      * on, so a newly-unhandled node type breaks the build instead of
      * silently corrupting output.
+     *
+     * <p><b>Known strict-mode limitations.</b> Six node types Rhino 1.8.0 still
+     * parses have no handler and therefore throw under strict mode. All six are
+     * Rhino/E4X legacy that no browser supports, and all six are harmless in
+     * the default lenient path, so they are recorded rather than fixed:
+     *
+     * <table>
+     * <caption>Node types with no handler</caption>
+     * <tr><td>{@code ARRAYCOMP} (171)</td><td>{@code [i*a for (i in a)]}</td></tr>
+     * <tr><td>{@code GENEXPR} (176)</td><td>{@code (i*a for (i in a))}</td></tr>
+     * <tr><td>{@code XML} (159)</td><td>{@code <a b="1">{a}</a>}</td></tr>
+     * <tr><td>{@code REF_NAME} (87)</td><td>{@code a::b}</td></tr>
+     * <tr><td>{@code DOTDOT} (157)</td><td>{@code a..b}</td></tr>
+     * <tr><td>{@code DOT} (121) as {@code XmlMemberGet}</td><td>{@code a.@b}</td></tr>
+     * </table>
+     *
+     * <p>The comprehension forms would need real emission support because they
+     * contain identifiers that must be munged; the four E4X forms are a dead
+     * language extension. This list is enumerated, not sampled - it is what a
+     * sweep of the constructs Rhino accepts actually produced - so a seventh
+     * appearing means a genuine change, not a gap in the probe.
+     *
+     * <p>{@code BIGINT} (89) used to be on this list and is now handled: it is
+     * standard ES2020 rather than legacy, and strict mode could not compress
+     * any file containing a BigInt literal.
      */
     public static final String STRICT_PROPERTY = "yuicompressor.strict";
 
@@ -215,6 +240,15 @@ public class MungedCodeGenerator {
             // Literals
             case Token.NUMBER:
                 output.append(((NumberLiteral) node).getValue());
+                break;
+            case Token.BIGINT:
+                // Standard ES2020. getValue() is the source text, "n" suffix and
+                // hex form included; toSource() would normalise "0xffn" to
+                // "255n", which is correct but needlessly rewrites the literal.
+                // Harmless in the lenient path (a leaf with no identifiers
+                // inside), but without a case here strict mode cannot compress
+                // any file containing a BigInt at all.
+                output.append(((BigIntLiteral) node).getValue());
                 break;
             case Token.STRING:
                 visitStringLiteral((StringLiteral) node);
@@ -900,12 +934,17 @@ public class MungedCodeGenerator {
     }
 
     private void visitForInLoop(ForInLoop forIn) {
-        output.append("for(");
+        // "for each" is a JS 1.6 Mozilla extension and the keyword goes BEFORE
+        // the parenthesis: "for each (var b in a)". Emitting it between the
+        // iterator and "in" produced "for(var a each in b)", which this
+        // compressor's own parser rejects ("missing ; after for-loop
+        // initializer") - invalid output, emitted with exit 0. No browser
+        // supports the form, but emitting something unparseable is worse than
+        // emitting something obsolete.
+        output.append(forIn.isForEach() ? "for each(" : "for(");
         visitNode(forIn.getIterator());
         if (forIn.isForOf()) {
             output.append(" of ");
-        } else if (forIn.isForEach()) {
-            output.append(" each in ");
         } else {
             output.append(" in ");
         }
@@ -1048,6 +1087,15 @@ public class MungedCodeGenerator {
             if (varName != null) {
                 output.append("catch(");
                 output.append(getMungedName(varName.getIdentifier(), clause));
+                AstNode guard = clause.getCatchCondition();
+                if (guard != null) {
+                    // "catch (e if e instanceof TypeError)" is a JS 1.7 Mozilla
+                    // extension. Dropping the guard silently WIDENS the catch to
+                    // every exception, which changes what the program does;
+                    // Rhino exposes it, so emit it.
+                    output.append(" if ");
+                    visitNode(guard);
+                }
                 output.append(")");
             } else {
                 // Optional catch binding: "catch" with no parentheses. "catch()"
@@ -1578,6 +1626,26 @@ public class MungedCodeGenerator {
         visitNode(fn.getBody());
     }
 
+    /**
+     * Emits an array literal, including its elisions.
+     *
+     * <p>A trailing elision needs an extra comma of its own. Commas here are
+     * separators, and a trailing separator is not an element - "[a,b,]" and
+     * "[a,b]" are both length 2 - so a final hole written with only the
+     * separator loop vanishes:
+     *
+     * <pre>
+     * [, , alpha, , ]   source: [null,null,7,null]  length 4
+     *                   emitted as "[,,b,]"       -> length 3
+     *                   must be    "[,,b,,]"      -> length 4
+     * </pre>
+     *
+     * <p>Silent, parses, and changes both the contents and {@code .length} of
+     * the array. Rhino's element list already models this correctly - it counts
+     * a trailing hole and does not count a trailing separator, matching JS
+     * {@code length} in every case checked - so the list size is the length to
+     * reproduce.
+     */
     private void visitArrayLiteral(ArrayLiteral arr) {
         output.append("[");
         List<AstNode> elements = arr.getElements();
@@ -1589,6 +1657,9 @@ public class MungedCodeGenerator {
             } else {
                 visitNode(element);
             }
+        }
+        if (!elements.isEmpty() && elements.get(elements.size() - 1) instanceof EmptyExpression) {
+            output.append(",");
         }
         output.append("]");
     }
