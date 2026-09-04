@@ -7,7 +7,16 @@ import java.io.StringReader;
 import org.junit.jupiter.api.Test;
 import org.mozilla.javascript.CompilerEnvirons;
 import org.mozilla.javascript.Parser;
+import org.mozilla.javascript.ast.ArrayLiteral;
+import org.mozilla.javascript.ast.AstNode;
 import org.mozilla.javascript.ast.AstRoot;
+import org.mozilla.javascript.ast.ExpressionStatement;
+import org.mozilla.javascript.ast.FunctionCall;
+import org.mozilla.javascript.ast.FunctionNode;
+import org.mozilla.javascript.ast.ObjectLiteral;
+import org.mozilla.javascript.ast.ObjectProperty;
+import org.mozilla.javascript.ast.VariableDeclaration;
+import org.mozilla.javascript.ast.VariableInitializer;
 
 /**
  * Test cases for ScopeBuilder
@@ -165,5 +174,82 @@ public class ScopeBuilderTest {
         ScriptOrFnScope globalScope = builder.buildScopeTree(ast);
 
         assertNotNull(globalScope.getIdentifier("result"), "Variable 'result' should be declared");
+    }
+
+    // The generic child recursion in ScopeBuilder used to walk Rhino's
+    // low-level Node chain (getFirstChild()/getNext()), which is not
+    // populated for AST nodes that store their children in typed fields
+    // (FunctionCall arguments, ObjectLiteral property values, ArrayLiteral
+    // elements, ...). A function expression sitting in one of those
+    // positions never got a scope, so its parameters were never munged.
+
+    @Test
+    public void testFunctionExpressionAsCallArgumentGetsScope() throws Exception {
+        String source = "p.then(function(longParam){ return longParam; });";
+        AstRoot ast = parseSource(source);
+
+        ExpressionStatement stmt = (ExpressionStatement) ast.getFirstChild();
+        FunctionCall call = (FunctionCall) stmt.getExpression();
+        FunctionNode fn = (FunctionNode) call.getArguments().get(0);
+
+        ScopeBuilder builder = new ScopeBuilder();
+        builder.buildScopeTree(ast);
+
+        ScriptOrFnScope fnScope = builder.getScopeForNode(fn);
+        assertNotNull(fnScope, "Function expression passed as a call argument should get a scope");
+        assertNotNull(fnScope.getIdentifier("longParam"), "Its parameter should be declared in that scope");
+    }
+
+    @Test
+    public void testFunctionExpressionAsObjectPropertyValueGetsScope() throws Exception {
+        String source = "var o = { m: function(longParam){ return longParam; } };";
+        AstRoot ast = parseSource(source);
+
+        VariableDeclaration varDecl = (VariableDeclaration) ast.getFirstChild();
+        VariableInitializer vi = varDecl.getVariables().get(0);
+        ObjectLiteral obj = (ObjectLiteral) vi.getInitializer();
+        ObjectProperty prop = obj.getElements().get(0);
+        FunctionNode fn = (FunctionNode) prop.getRight();
+
+        ScopeBuilder builder = new ScopeBuilder();
+        builder.buildScopeTree(ast);
+
+        ScriptOrFnScope fnScope = builder.getScopeForNode(fn);
+        assertNotNull(fnScope, "Function expression used as an object literal property value should get a scope");
+        assertNotNull(fnScope.getIdentifier("longParam"), "Its parameter should be declared in that scope");
+    }
+
+    @Test
+    public void testFunctionExpressionAsArrayElementGetsScope() throws Exception {
+        String source = "var arr = [ function(longParam){ return longParam; } ];";
+        AstRoot ast = parseSource(source);
+
+        VariableDeclaration varDecl = (VariableDeclaration) ast.getFirstChild();
+        VariableInitializer vi = varDecl.getVariables().get(0);
+        ArrayLiteral arr = (ArrayLiteral) vi.getInitializer();
+        FunctionNode fn = (FunctionNode) arr.getElements().get(0);
+
+        ScopeBuilder builder = new ScopeBuilder();
+        builder.buildScopeTree(ast);
+
+        ScriptOrFnScope fnScope = builder.getScopeForNode(fn);
+        assertNotNull(fnScope, "Function expression used as an array literal element should get a scope");
+        assertNotNull(fnScope.getIdentifier("longParam"), "Its parameter should be declared in that scope");
+    }
+
+    @Test
+    public void testVariableDeclaredInsideIfBlockIsDeclaredInFunctionScope() throws Exception {
+        String source = "function outer(x) { if (x) { var innerVariable = 1; } }";
+        AstRoot ast = parseSource(source);
+
+        FunctionNode fn = (FunctionNode) ast.getFirstChild();
+
+        ScopeBuilder builder = new ScopeBuilder();
+        builder.buildScopeTree(ast);
+
+        ScriptOrFnScope fnScope = builder.getScopeForNode(fn);
+        assertNotNull(fnScope, "Function should have a scope");
+        assertNotNull(fnScope.getIdentifier("innerVariable"),
+            "Variable declared inside an if-block should be declared in the enclosing function scope");
     }
 }

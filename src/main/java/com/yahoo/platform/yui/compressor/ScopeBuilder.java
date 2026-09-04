@@ -8,7 +8,6 @@
  */
 package com.yahoo.platform.yui.compressor;
 
-import org.mozilla.javascript.Node;
 import org.mozilla.javascript.ast.*;
 import java.util.*;
 
@@ -161,11 +160,48 @@ public class ScopeBuilder {
             return;
         }
 
-        // Visit all child nodes
-        for (Node child = node.getFirstChild(); child != null; child = child.getNext()) {
-            if (child instanceof AstNode) {
-                visitNode((AstNode) child, currentScope, braceNesting);
+        // Visit all child nodes.
+        //
+        // Rhino's low-level Node.getFirstChild()/getNext() chain is only
+        // populated for list-style containers (Block, AstRoot, ...). AST
+        // nodes that keep their children in typed fields instead - function
+        // call arguments, object literal property values, array literal
+        // elements, if/while/for bodies, infix expression operands, and so
+        // on - report zero children through that chain, so it silently
+        // skips them. AstNode.visit(NodeVisitor) is what Rhino itself uses
+        // to enumerate a node's children correctly regardless of how they
+        // are stored, so it is used here instead. Returning true only for
+        // the first callback (the node itself) descends one level; false
+        // afterward stops Rhino from recursing further, since visitNode()
+        // below continues the traversal itself with the correct scope and
+        // brace nesting for each child.
+        node.visit(new ChildVisitor(currentScope, braceNesting));
+    }
+
+    /**
+     * Visits exactly the direct children of the node it is handed,
+     * delegating each to {@link #visitNode}, which carries the traversal
+     * deeper. See the comment at the call site for why this is needed
+     * instead of the low-level Node child chain.
+     */
+    private class ChildVisitor implements NodeVisitor {
+        private final ScriptOrFnScope scope;
+        private final int braceNesting;
+        private boolean isRoot = true;
+
+        ChildVisitor(ScriptOrFnScope scope, int braceNesting) {
+            this.scope = scope;
+            this.braceNesting = braceNesting;
+        }
+
+        public boolean visit(AstNode node) {
+            if (isRoot) {
+                // First callback is always the node passed to visit(); descend into its children.
+                isRoot = false;
+                return true;
             }
+            visitNode(node, scope, braceNesting);
+            return false;
         }
     }
 

@@ -715,5 +715,69 @@ public class JavaScriptCompressorTest {
         assertTrue(result.contains("catch"), "Should contain catch keyword");
         assertFalse(result.isEmpty(), "Should not be empty");
     }
+
+    // ScopeBuilder's generic child traversal walks Rhino's low-level Node
+    // chain (getFirstChild()/getNext()), which is only populated for
+    // list-style containers like Block. AST nodes that keep their children in
+    // typed fields (FunctionCall arguments, ObjectLiteral property values,
+    // ArrayLiteral elements, ...) are invisible to it, so a function
+    // expression sitting in one of those positions never gets a scope and its
+    // parameters are never munged.
+
+    @Test
+    public void testFunctionExpressionAsCallArgumentIsMunged() throws Exception {
+        String input = "p.then(function(longParamName){ return longParamName; });";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression passed as a call argument should be munged");
+    }
+
+    @Test
+    public void testFunctionExpressionAsObjectPropertyValueIsMunged() throws Exception {
+        String input = "var o = { m: function(longParamName){ return longParamName; } };";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression used as an object literal property value should be munged");
+    }
+
+    @Test
+    public void testFunctionExpressionAsArrayElementIsMunged() throws Exception {
+        String input = "var arr = [ function(longParamName){ return longParamName; } ];";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression used as an array literal element should be munged");
+    }
+
+    @Test
+    public void testVariableDeclaredInsideIfBlockIsMunged() throws Exception {
+        // ScopeBuilder's traversal gap is not limited to function expressions:
+        // IfStatement, WhileLoop, and most other single/fixed-arity-child AST
+        // nodes also store their children in typed fields only, so a `var`
+        // declared inside an if-block was never discovered either.
+        String input = "function outer(x) { if (x) { var innerVariableName = 1; } return innerVariableName; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("innerVariableName"),
+            "Variable declared inside an if-block should be munged");
+    }
 }
 
