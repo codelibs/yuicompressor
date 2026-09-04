@@ -1436,7 +1436,20 @@ public class MungedCodeGenerator {
             if (prop.isShorthand()) {
                 AstNode left = prop.getLeft();
                 if (left instanceof Name) {
-                    output.append(getMungedName(((Name) left).getIdentifier(), prop));
+                    // "{b}" is shorthand for "{b:b}" - the identifier is BOTH
+                    // the property key and the binding, so munging it renames
+                    // the key too. In an object literal that silently renames
+                    // the property; in a destructuring pattern (including a
+                    // destructured parameter) it reads a property that does not
+                    // exist, so "function f({b}){return b;}" called with
+                    // {b:7} returned undefined. Expanding to "b:a" keeps the
+                    // key and munges only the binding.
+                    String original = ((Name) left).getIdentifier();
+                    String munged = getMungedName(original, prop);
+                    output.append(original);
+                    if (!munged.equals(original)) {
+                        output.append(":").append(munged);
+                    }
                 } else {
                     visitNode(left);
                 }

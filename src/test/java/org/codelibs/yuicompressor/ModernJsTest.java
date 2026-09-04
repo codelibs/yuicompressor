@@ -634,6 +634,32 @@ class ModernJsTest {
         assertEquals("for(var i=0;i<3;i++);", compressNoMunge("for (var i=0;i<3;i++) ;"));
     }
 
+    // A shorthand property is one identifier serving as BOTH the property key
+    // and the binding, so munging it renames the key with it. Found by
+    // DifferentialExecutionTest running the code rather than checking that it
+    // parses - the broken output parses perfectly and simply returns undefined.
+
+    @Test
+    void aShorthandObjectLiteralPropertyKeepsItsKeyWhenTheBindingIsMunged() throws Exception {
+        String result = compress("function f(){ var longLocalName = 7; return { longLocalName }; }");
+        assertEquals("function f(){var a=7;return{longLocalName:a};}", result,
+                "munging the shorthand would rename the property itself: " + result);
+    }
+
+    @Test
+    void aShorthandDestructuringPatternKeepsItsKeyWhenTheBindingIsMunged() throws Exception {
+        String result = compress("function f(){ var o = { b: 7 }; var { b } = o; return b; }");
+        assertEquals("function f(){var c={b:7};var {b:a}=c;return a;}", result,
+                "munging the shorthand would read a property that does not exist: " + result);
+    }
+
+    @Test
+    void aShorthandPropertyThatIsNotMungedStaysShorthand() throws Exception {
+        // The other direction: an unmunged binding must not be expanded to
+        // "g:g", which would cost bytes for nothing.
+        assertEquals("var g=1;var o={g};", compress("var g = 1; var o = { g };"));
+    }
+
     @Test
     void aGeneratorObjectMethodCompressesRatherThanCrashing() throws Exception {
         // Rhino wraps a generator method's key in a GeneratorMethodDefinition

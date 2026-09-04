@@ -81,7 +81,11 @@ class ParameterListTest {
 
     @Test
     void destructuredObjectParameter() throws Exception {
-        assertEquals("function f({a}){return a;}", compress("function f({b}){ return b; }"));
+        // Not "{a}": in "{b}" the identifier is both the property key and the
+        // binding, so munging it would read a property named "a" that the
+        // caller never passed. The key must stay and only the binding is
+        // munged. Caught by DifferentialExecutionTest, which ran it.
+        assertEquals("function f({b:a}){return a;}", compress("function f({b}){ return b; }"));
     }
 
     @Test

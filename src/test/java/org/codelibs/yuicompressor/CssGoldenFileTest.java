@@ -43,7 +43,6 @@ class CssGoldenFileTest {
         try (Stream<Path> files = Files.list(RESOURCES)) {
             return files.map(p -> p.getFileName().toString())
                     .filter(n -> n.endsWith(".css"))
-                    .filter(n -> !n.startsWith("_"))
                     .filter(n -> Files.exists(RESOURCES.resolve(n + ".min")))
                     .filter(n -> !KNOWN_FAILURES.contains(n))
                     .sorted()

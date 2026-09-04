@@ -58,7 +58,6 @@ class JsOutputSyntaxTest {
         try (Stream<Path> files = Files.list(RESOURCES)) {
             return files.map(p -> p.getFileName().toString())
                     .filter(n -> n.endsWith(".js"))
-                    .filter(n -> !n.startsWith("_"))
                     .sorted()
                     .collect(Collectors.toList())
                     .stream();
