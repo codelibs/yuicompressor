@@ -52,6 +52,23 @@ public class ScopeBuilder {
                 declareParameterIdentifiers(param, fnScope);
             }
 
+            // Visit default parameter values with the new scope. Rhino keeps
+            // them in a side list (getDefaultParams()) rather than as children
+            // of the parameter nodes, so the body traversal below never reaches
+            // them. They are live code that runs on every call with the
+            // parameter omitted, so a name read there is a real use and an
+            // "eval" or "with" there is a real reason not to munge - both were
+            // invisible while MungedCodeGenerator dropped defaults entirely.
+            List<Object> defaultParams = fn.getDefaultParams();
+            if (defaultParams != null) {
+                for (int i = 1; i < defaultParams.size(); i += 2) {
+                    Object value = defaultParams.get(i);
+                    if (value instanceof AstNode) {
+                        visitNode((AstNode) value, fnScope, braceNesting + 1);
+                    }
+                }
+            }
+
             // Visit function body with new scope
             AstNode body = fn.getBody();
             if (body != null) {

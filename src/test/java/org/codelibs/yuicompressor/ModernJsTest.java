@@ -67,6 +67,17 @@ class ModernJsTest {
     }
 
     @Test
+    void aLineCommentContainingBlockCommentTextDoesNotSwallowAGenuineOptionalChain() throws Exception {
+        // isOptionalGap strips comments out of the source gap before looking
+        // for "?.". Stripping BLOCK comments first let the "/*" inside this
+        // line comment open a block comment that ran to the next "*/" - past
+        // the end of the line - taking the real "?." with it and silently
+        // widening the chain to a plain ".". Line comments must go first.
+        String result = compressNoMunge("var v = a //x /*\n/*y*/?.b;");
+        assertEquals("var v=a?.b;", result, result);
+    }
+
+    @Test
     void catchWithoutBindingStaysValid() throws Exception {
         String result = compress("try { f(); } catch { g(); }");
         assertFalse(result.contains("catch()"),
@@ -266,7 +277,7 @@ class ModernJsTest {
     @Test
     void labeledStatementDoesNotCrashTheCompressor() throws Exception {
         String result = compressNoMunge("outer: for (var i=0;i<3;i++) { break outer; }");
-        assertEquals("outer:for(var i=0;i<3;i++){{break outer;}}", result,
+        assertEquals("outer:for(var i=0;i<3;i++){break outer;}", result,
                 "the label and the 'break outer' inside it must survive, and a labeled "
                         + "for-loop must not gain a needless trailing ';' (a for-loop never "
                         + "needs one): " + result);
@@ -415,7 +426,7 @@ class ModernJsTest {
     @Test
     void labeledForLoopDoesNotGainANeedlessSemicolon() throws Exception {
         String result = compressNoMunge("outer: for (var i=0;i<3;i++) { f(); }");
-        assertEquals("outer:for(var i=0;i<3;i++){{f();}}", result,
+        assertEquals("outer:for(var i=0;i<3;i++){f();}", result,
                 "a for-loop never needs a trailing ';', with or without a label: " + result);
     }
 
@@ -574,6 +585,66 @@ class ModernJsTest {
         // requires parentheses, so they must survive in both directions.
         assertEquals("var v=(a??b)||c;", compressNoMunge("var v = (a ?? b) || c;"));
         assertEquals("var v=a??(b||c);", compressNoMunge("var v = a ?? (b || c);"));
+    }
+
+    // Rhino wraps a loop, if- or do-body that declares anything in a Scope,
+    // which does NOT extend Block, so the "body instanceof Block" check missed
+    // it and wrapped an already-braced block in a second brace pair:
+    // "for(...){f();}" came out as "for(...){{f();}}". 1,100 of them on jQuery,
+    // 2,200 bytes. Checking the node's TYPE catches Block and Scope alike.
+
+    @Test
+    void aBracedLoopBodyDoesNotGainASecondBracePair() throws Exception {
+        assertEquals("for(var i=0;i<3;i++){f();}", compressNoMunge("for (var i=0;i<3;i++) { f(); }"));
+    }
+
+    @Test
+    void aBracedWhileBodyDoesNotGainASecondBracePair() throws Exception {
+        assertEquals("while(x){f();}", compressNoMunge("while (x) { f(); }"));
+    }
+
+    @Test
+    void aBracedDoBodyDoesNotGainASecondBracePair() throws Exception {
+        assertEquals("do{f();}while(x)", compressNoMunge("do { f(); } while (x);"));
+    }
+
+    @Test
+    void aBracedIfAndElseBodyDoNotGainASecondBracePair() throws Exception {
+        assertEquals("if(x){f();}else{g();}", compressNoMunge("if (x) { f(); } else { g(); }"));
+    }
+
+    @Test
+    void anUnbracedBodyStillGetsItsBraces() throws Exception {
+        // The other direction: braces are what make the emitted body a single
+        // statement, so a single-statement body must still get them.
+        assertEquals("for(var i=0;i<3;i++){f();}", compressNoMunge("for (var i=0;i<3;i++) f();"));
+        assertEquals("while(x){f();}", compressNoMunge("while (x) f();"));
+        assertEquals("if(x){f();}else{g();}", compressNoMunge("if (x) f(); else g();"));
+    }
+
+    @Test
+    void danglingElseBindingIsUnchanged() throws Exception {
+        // The inner "if" has no else of its own, so the braces around it are
+        // load-bearing: without them the "else" would bind to the inner "if".
+        assertEquals("if(a){if(b){f();}}else{g();}", compressNoMunge("if (a) { if (b) f(); } else g();"));
+    }
+
+    @Test
+    void anEmptyLoopBodyStillCompressesToASemicolon() throws Exception {
+        assertEquals("for(var i=0;i<3;i++);", compressNoMunge("for (var i=0;i<3;i++) ;"));
+    }
+
+    @Test
+    void aGeneratorObjectMethodCompressesRatherThanCrashing() throws Exception {
+        // Rhino wraps a generator method's key in a GeneratorMethodDefinition
+        // whose type is Token.MUL, so the object-literal path cast it to
+        // InfixExpression and died with a ClassCastException.
+        assertEquals("var o={*gen(){yield 1;}};", compressNoMunge("var o = { *gen(){ yield 1; } };"));
+    }
+
+    @Test
+    void aComputedGeneratorObjectMethodCompresses() throws Exception {
+        assertEquals("var o={*[1+1](){yield 1;}};", compressNoMunge("var o = { *[1+1](){ yield 1; } };"));
     }
 
     @Test

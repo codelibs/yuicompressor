@@ -492,31 +492,40 @@ public class MungedCodeGenerator {
                 break;
 
             default:
-                // Fallback: use toSource() for unsupported nodes.
-                //
-                // This is not merely "unsupported nodes print oddly". toSource()
-                // re-prints the ORIGINAL source of the whole subtree, so every
-                // identifier inside keeps its pre-munge spelling while its
-                // declaration was munged - silently turning locals into globals -
-                // and it drops "?." entirely. Any node type that lands here is a
-                // latent silent-corruption bug, and upgrading Rhino (Release 2)
-                // makes more syntax parse, which routes MORE node types here.
-                //
-                // Strict mode turns that latent bug into a build break. It is off
-                // by default so existing callers keep today's behaviour.
-                if (isStrict()) {
-                    throw new UnsupportedSyntaxException(
-                        "no handler for node type " + type + " (" +
-                        Token.typeToName(type) + ", " + node.getClass().getName() +
-                        "); the toSource() fallback would emit un-munged identifiers");
-                }
-                if (System.getProperty("yuicompressor.debug") != null) {
-                    System.err.println("Warning: Using toSource() for unsupported node type: " +
-                        type + " (" + node.getClass().getSimpleName() + ")");
-                }
-                output.append(node.toSource());
+                appendFallback(node);
                 break;
         }
+    }
+
+    /**
+     * Last resort for a construct this generator cannot reproduce: re-print it
+     * with {@code toSource()}.
+     *
+     * <p>This is not merely "unsupported nodes print oddly". {@code toSource()}
+     * re-prints the ORIGINAL source of the whole subtree, so every identifier
+     * inside keeps its pre-munge spelling while its declaration was munged -
+     * silently turning locals into globals - and it drops "?." entirely. The
+     * result parses, so neither a golden comparison nor {@code node --check}
+     * notices. Anything that lands here is a latent silent-corruption bug, and
+     * upgrading Rhino (Release 2) makes more syntax parse, which routes MORE
+     * node types here.
+     *
+     * <p>{@link #STRICT_PROPERTY} turns that latent bug into a build break. It
+     * is off by default so existing callers keep today's behaviour.
+     */
+    private void appendFallback(AstNode node) {
+        int type = node.getType();
+        if (isStrict()) {
+            throw new UnsupportedSyntaxException(
+                "no handler for node type " + type + " (" +
+                Token.typeToName(type) + ", " + node.getClass().getName() +
+                "); the toSource() fallback would emit un-munged identifiers");
+        }
+        if (System.getProperty("yuicompressor.debug") != null) {
+            System.err.println("Warning: Using toSource() for unsupported node type: " +
+                type + " (" + node.getClass().getSimpleName() + ")");
+        }
+        output.append(node.toSource());
     }
 
     private void visitScript(AstRoot script) {
@@ -570,8 +579,11 @@ public class MungedCodeGenerator {
     private void visitArrowFunction(FunctionNode arrow) {
         List<AstNode> params = arrow.getParams();
 
-        // Parameters
-        if (params.size() == 1 && params.get(0) instanceof Name) {
+        // Parameters. The bare form is only available for a single plain
+        // identifier with no default: "(a=1)=>a" cannot lose its parentheses,
+        // and dropping them here would take the "=1" with them.
+        if (params.size() == 1 && params.get(0) instanceof Name && !arrow.hasRestParameter()
+                && collectDefaultParams(arrow).isEmpty()) {
             // Single parameter without parentheses (may need them for munging consistency)
             String paramName = ((Name) params.get(0)).getIdentifier();
             output.append(getMungedName(paramName, arrow));
@@ -596,18 +608,166 @@ public class MungedCodeGenerator {
         }
     }
 
+    /**
+     * Emits a function's parameter list.
+     *
+     * <p>Rhino spreads a parameter's full syntax across three places rather
+     * than one. {@code getParams()} carries only the binding target - a rest
+     * parameter appears there as a plain {@code Name}, exactly like an
+     * ordinary one. {@code hasRestParameter()} says whether the last one is a
+     * rest parameter. {@code getDefaultParams()} carries a flat, alternating
+     * list of original parameter NAME and default-value expression, and
+     * records nothing at all for a destructuring pattern's default.
+     *
+     * <p>Reading only {@code getParams()}, as this used to, silently dropped
+     * both "..." and "= &lt;default&gt;":
+     *
+     * <pre>
+     * function f(a=1){ return a; }               -&gt; function f(a){return a;}
+     * function f(...args){ return args.length; } -&gt; function f(args){return args.length;}
+     * </pre>
+     *
+     * which changes {@code f()} from 1 to undefined, and turns an array of the
+     * trailing arguments into a single positional parameter (also changing
+     * {@code f.length}). Both are silent behaviour changes on syntax Rhino
+     * parses happily.
+     *
+     * <p>A parameter whose full syntax cannot be reconstructed throws rather
+     * than emitting a truncated list. The case that reaches this is a
+     * destructuring pattern carrying a default - {@code function f({b}={})} -
+     * whose "={}" Rhino records nowhere. The original source is consulted to
+     * tell that apart from a plain {@code function f({b})}, which is
+     * reproduced exactly and must keep working.
+     */
     private void visitParameterList(List<AstNode> params, FunctionNode fn) {
+        Map<String, AstNode> defaults = collectDefaultParams(fn);
+        // A rest parameter is always the last one; Rhino flags it on the
+        // function rather than on the parameter node.
+        int restIndex = fn.hasRestParameter() ? params.size() - 1 : -1;
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) output.append(",");
             AstNode param = params.get(i);
+            if (i == restIndex) {
+                output.append("...");
+            }
             if (param instanceof Name) {
                 String paramName = ((Name) param).getIdentifier();
                 output.append(getMungedName(paramName, fn));
+                AstNode defaultValue = defaults.get(paramName);
+                if (defaultValue != null) {
+                    output.append("=");
+                    // Visited, not printed: identifiers inside the default
+                    // expression must be munged like any other. Rhino keeps
+                    // the expression in a side list with no parent link back
+                    // to the function, so findScopeForVariable's walk would
+                    // run straight off the top and resolve every name against
+                    // the GLOBAL scope - "function f(alpha, beta=alpha)" would
+                    // emit "function f(b,a=alpha)", making alpha a global.
+                    // Restoring the link the node should have had is enough;
+                    // it is idempotent and the node is otherwise unreferenced.
+                    if (defaultValue.getParent() == null) {
+                        defaultValue.setParent(fn);
+                    }
+                    visitNode(defaultValue);
+                }
+            } else if (hasDefaultInSource(param)) {
+                throw new UnsupportedSyntaxException(
+                    "cannot reconstruct the default value of destructuring parameter " + (i + 1)
+                        + " of " + describe(fn) + "; Rhino records it nowhere, and emitting the "
+                        + "pattern without it would silently change what the function does");
             } else {
-                // Complex parameter (destructuring, default value, rest)
+                // A destructuring pattern with no default reproduces exactly.
                 visitNode(param);
             }
         }
+    }
+
+    /**
+     * Reads {@code getDefaultParams()}'s flat name/value pairs into a map keyed
+     * by the parameter's ORIGINAL (pre-munge) name, which is what Rhino stores.
+     * An unexpected shape throws rather than being skipped: silently dropping a
+     * default is the defect this method exists to fix.
+     */
+    private static Map<String, AstNode> collectDefaultParams(FunctionNode fn) {
+        List<Object> pairs = fn.getDefaultParams();
+        if (pairs == null || pairs.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        if (pairs.size() % 2 != 0) {
+            throw new UnsupportedSyntaxException("FunctionNode.getDefaultParams() returned " + pairs.size()
+                + " entries for " + describe(fn) + "; expected name/value pairs");
+        }
+        Map<String, AstNode> defaults = new HashMap<>();
+        for (int i = 0; i < pairs.size(); i += 2) {
+            Object name = pairs.get(i);
+            Object value = pairs.get(i + 1);
+            if (!(name instanceof String) || !(value instanceof AstNode)) {
+                throw new UnsupportedSyntaxException("unexpected FunctionNode.getDefaultParams() entry at index "
+                    + i + " of " + describe(fn) + ": " + className(name) + " / " + className(value));
+            }
+            defaults.put((String) name, (AstNode) value);
+        }
+        return defaults;
+    }
+
+    /**
+     * Whether the original source has a "=" immediately after {@code param},
+     * i.e. the parameter carries a default value. Only asked about
+     * destructuring patterns, for which Rhino records no default at all, so
+     * {@code function f({b})} and {@code function f({b}={})} produce identical
+     * parameter nodes and only the source text can tell them apart.
+     *
+     * <p>Returns true when there is no source to consult: an unseen default is
+     * exactly the silent drop this check exists to prevent, so the answer that
+     * leads to a thrown error is the safe one.
+     */
+    private boolean hasDefaultInSource(AstNode param) {
+        if (source == null) {
+            return true;
+        }
+        int i = param.getAbsolutePosition() + param.getLength();
+        if (i < 0 || i > source.length()) {
+            return true;
+        }
+        while (i < source.length()) {
+            char c = source.charAt(i);
+            if (Character.isWhitespace(c)) {
+                i++;
+                continue;
+            }
+            if (c == '/' && i + 1 < source.length()) {
+                char next = source.charAt(i + 1);
+                if (next == '/') {
+                    int end = i + 2;
+                    while (end < source.length() && source.charAt(end) != '\n' && source.charAt(end) != '\r') {
+                        end++;
+                    }
+                    i = end;
+                    continue;
+                }
+                if (next == '*') {
+                    int end = source.indexOf("*/", i + 2);
+                    if (end < 0) {
+                        return true; // unterminated comment: don't guess
+                    }
+                    i = end + 2;
+                    continue;
+                }
+            }
+            // Anything else ends the question: "," or ")" means no default.
+            return c == '=';
+        }
+        return false;
+    }
+
+    private static String describe(FunctionNode fn) {
+        String name = fn.getName();
+        return (name == null || name.isEmpty() ? "an anonymous function" : "function " + name)
+            + " at line " + fn.getLineno();
+    }
+
+    private static String className(Object o) {
+        return o == null ? "null" : o.getClass().getName();
     }
 
     private void visitName(Name name) {
@@ -692,7 +852,7 @@ public class MungedCodeGenerator {
         output.append(")");
 
         AstNode thenPart = ifStmt.getThenPart();
-        boolean needsBraces = !(thenPart instanceof Block);
+        boolean needsBraces = !isBraced(thenPart);
         if (needsBraces) output.append("{");
         visitNode(thenPart);
         if (needsBraces && needsSemicolon(thenPart)) output.append(";");
@@ -705,7 +865,7 @@ public class MungedCodeGenerator {
                 output.append(" ");
                 visitNode(elsePart);
             } else {
-                boolean elseNeedsBraces = !(elsePart instanceof Block);
+                boolean elseNeedsBraces = !isBraced(elsePart);
                 if (elseNeedsBraces) output.append("{");
                 visitNode(elsePart);
                 if (elseNeedsBraces && needsSemicolon(elsePart)) output.append(";");
@@ -769,7 +929,7 @@ public class MungedCodeGenerator {
         output.append("do");
 
         AstNode body = doLoop.getBody();
-        if (body instanceof Block) {
+        if (isBraced(body)) {
             visitNode(body);
         } else {
             output.append("{");
@@ -784,7 +944,7 @@ public class MungedCodeGenerator {
     }
 
     private void visitLoopBody(AstNode body) {
-        if (body instanceof Block) {
+        if (isBraced(body)) {
             visitNode(body);
         } else if (body instanceof EmptyStatement) {
             output.append(";");
@@ -794,6 +954,24 @@ public class MungedCodeGenerator {
             if (needsSemicolon(body)) output.append(";");
             output.append("}");
         }
+    }
+
+    /**
+     * Whether visiting {@code body} will emit its own braces, so that a caller
+     * about to wrap it must not add a second pair.
+     *
+     * <p>Not {@code instanceof Block}: Rhino wraps a loop, if- or do-body that
+     * declares anything in a {@link Scope}, which does NOT extend
+     * {@link Block}. The {@code instanceof} check therefore missed every such
+     * body and emitted "for(...){{f();}}" - 1,100 redundant brace pairs and
+     * 2,201 bytes on jQuery alone. Both classes report {@code Token.BLOCK},
+     * and {@code visitNode} routes both to a visitor that writes its own
+     * braces, so the node's type is the question that actually matters here.
+     * {@code AstRoot} and {@code FunctionNode} are also {@code Scope}
+     * subclasses but report SCRIPT/FUNCTION, so they are correctly excluded.
+     */
+    private static boolean isBraced(AstNode body) {
+        return body != null && body.getType() == Token.BLOCK;
     }
 
     private void visitSwitchStatement(SwitchStatement switchStmt) {
@@ -1262,36 +1440,8 @@ public class MungedCodeGenerator {
                 } else {
                     visitNode(left);
                 }
-            } else if (prop.isGetterMethod()) {
-                output.append("get ");
-                visitNode(prop.getLeft());
-                AstNode right = prop.getRight();
-                if (right instanceof FunctionNode) {
-                    FunctionNode fn = (FunctionNode) right;
-                    output.append("(");
-                    visitParameterList(fn.getParams(), fn);
-                    output.append(")");
-                    visitNode(fn.getBody());
-                }
-            } else if (prop.isSetterMethod()) {
-                output.append("set ");
-                visitNode(prop.getLeft());
-                AstNode right = prop.getRight();
-                if (right instanceof FunctionNode) {
-                    FunctionNode fn = (FunctionNode) right;
-                    output.append("(");
-                    visitParameterList(fn.getParams(), fn);
-                    output.append(")");
-                    visitNode(fn.getBody());
-                }
-            } else if (prop.isNormalMethod()) {
-                // ES6 shorthand method: keep "m(){...}" rather than "m:function(){...}"
-                visitNode(prop.getLeft());
-                FunctionNode method = (FunctionNode) prop.getRight();
-                output.append("(");
-                visitParameterList(method.getParams(), method);
-                output.append(")");
-                visitNode(method.getBody());
+            } else if (prop.isGetterMethod() || prop.isSetterMethod() || prop.isNormalMethod()) {
+                visitObjectMethod(prop);
             } else {
                 // Regular property
                 AstNode key = prop.getLeft();
@@ -1307,6 +1457,64 @@ public class MungedCodeGenerator {
             }
         }
         output.append("}");
+    }
+
+    /**
+     * Emits a getter, setter or ES6 shorthand method of an object literal.
+     *
+     * <p>Two failure directions are corrected here. The getter and setter
+     * branches used to emit "get "/"set " and the key, then emit the parameter
+     * list and body only {@code if (right instanceof FunctionNode)} - so a
+     * right-hand side that was not a {@code FunctionNode} produced "{get x}",
+     * which is not valid JavaScript. And the normal-method branch cast the
+     * key blindly, so a generator method ({@code var o = { *gen(){...} };} -
+     * which Rhino parses) died with a {@code ClassCastException} deep inside
+     * the infix path, because Rhino wraps a generator method's key in a
+     * {@code GeneratorMethodDefinition} whose type is {@code Token.MUL}.
+     *
+     * <p>Anything still not reconstructable goes to {@link #appendFallback},
+     * which under strict mode throws naming the construct. A truncated
+     * property or a {@code ClassCastException} is not an acceptable outcome
+     * either way.
+     */
+    private void visitObjectMethod(ObjectProperty prop) {
+        AstNode right = prop.getRight();
+        if (!(right instanceof FunctionNode)) {
+            appendFallback(prop);
+            return;
+        }
+        AstNode key = prop.getLeft();
+        boolean generator = key instanceof GeneratorMethodDefinition;
+        if (generator) {
+            key = ((GeneratorMethodDefinition) key).getMethodName();
+            if (key == null) {
+                appendFallback(prop);
+                return;
+            }
+        }
+
+        if (prop.isGetterMethod()) {
+            output.append("get ");
+        } else if (prop.isSetterMethod()) {
+            output.append("set ");
+        } else if (generator) {
+            // ES6 shorthand generator method: "*gen(){...}".
+            output.append("*");
+        }
+
+        if (key instanceof ComputedPropertyKey) {
+            output.append("[");
+            visitNode(((ComputedPropertyKey) key).getExpression());
+            output.append("]");
+        } else {
+            visitNode(key);
+        }
+
+        FunctionNode fn = (FunctionNode) right;
+        output.append("(");
+        visitParameterList(fn.getParams(), fn);
+        output.append(")");
+        visitNode(fn.getBody());
     }
 
     private void visitArrayLiteral(ArrayLiteral arr) {
@@ -1415,8 +1623,12 @@ public class MungedCodeGenerator {
             java.util.regex.Pattern.compile("//[^\\n\\r]*");
 
     private String stripComments(String text) {
-        text = BLOCK_COMMENT.matcher(text).replaceAll("");
+        // Line comments first. A "//" comment whose own text contains "/*"
+        // would otherwise let the block-comment pattern start inside it and
+        // run past the line's end, swallowing a genuine "?." that follows and
+        // silently widening the optional chain.
         text = LINE_COMMENT.matcher(text).replaceAll("");
+        text = BLOCK_COMMENT.matcher(text).replaceAll("");
         return text;
     }
 

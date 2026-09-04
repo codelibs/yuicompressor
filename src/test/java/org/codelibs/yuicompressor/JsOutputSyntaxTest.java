@@ -212,11 +212,11 @@ class JsOutputSyntaxTest {
     @Test
     public void scannerAllowsRegexLiteralFollowingEmptyBlockStatement() {
         // The competing, also-reachable case: "if(x){} /re/.test(y);"
-        // compresses to "if(x){{}}/re/.test(y);" - a genuine regex literal
+        // compresses to "if(x){}/re/.test(y);" - a genuine regex literal
         // right after a block. Treating "}" as division-context must not
         // turn this into a false positive: "re/.test(y);" scanned as
         // ordinary code contains none of the four dangerous sequences.
-        assertEquals(List.of(), new CommentInjectionScanner("if(x){{}}/re/.test(y);").scan());
+        assertEquals(List.of(), new CommentInjectionScanner("if(x){}/re/.test(y);").scan());
     }
 
     @Test
@@ -279,7 +279,7 @@ class JsOutputSyntaxTest {
         // guards against.
         //
         // "if (x) { y = 1; } /foo\/\//.test(z);" compresses to
-        // "if(x){{y=1;}}/foo\/\//.test(z);". With "}" excluded from
+        // "if(x){y=1;}/foo\/\//.test(z);". With "}" excluded from
         // REGEX_PRECURSORS, the "/" opening that regex is read as division,
         // so the regex's own content - including its escaped "\/" pairs - is
         // scanned as ordinary code instead of skipped whole. Walking
@@ -292,7 +292,7 @@ class JsOutputSyntaxTest {
         // an accidentally-scanned regex would remove this trade, but adds
         // real scanner complexity for a test-only guard - rejected in favor
         // of documenting and testing the trade explicitly.
-        assertEquals(1, new CommentInjectionScanner("if(x){{y=1;}}/foo\\/\\//.test(z);").scan().size());
+        assertEquals(1, new CommentInjectionScanner("if(x){y=1;}/foo\\/\\//.test(z);").scan().size());
     }
 
     @Test
