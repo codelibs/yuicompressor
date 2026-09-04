@@ -57,6 +57,21 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   for the rest of the file; a newline in a CSS string is a parse error, so the declaration it broke
   was dropped. With an apostrophe instead, the tracker stuck "inside a string" and suppressed every
   later linebreak - the harmless half of the same fault
+- **White space inside a non-base64 `data:` URL is no longer deleted.** Preserving a `data:` URL
+  stripped white space from the whole token, including the contents of its quoted string. For a
+  base64 payload that is a convenience; for any other payload the data is literal, so it destroyed
+  author bytes on valid CSS with exit code 0:
+  `url("data:image/svg+xml,<svg viewBox='0 0 24 24'><text>hello world</text></svg>")` came out with
+  `viewBox='002424'` - one invalid value where the grammar wants four numbers - and
+  `<text>helloworld</text>`. Percent-encoded payloads (`%20`) were never affected, which is why
+  this survived: that is the machine-generated style and the literal space is the hand-written one.
+  White space is still removed *outside* the quotes, and still joined *inside* them when the
+  payload is base64 (RFC 2397 puts `;base64` last in the header, after any media-type parameter,
+  and such a payload's white space is insignificant). One deliberate consequence: a non-base64
+  quoted `data:` URL split across lines is no longer joined - a newline inside a CSS string is a
+  parse error, so that input was already invalid, and the accidental repair was the same operation
+  as the corruption. Unquoted `data:` URLs are unchanged, since white space inside a url-token
+  makes it a bad-url-token anyway
 - At-rules and declarations are now only recognised where one can actually begin - after `}`,
   `;`, `{`, a preserved-token placeholder, or the start of the stylesheet. Matching their literal
   text anywhere it appeared meant `a { background: url(/img/@property.png) }` was treated as an
@@ -173,6 +188,51 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
 - `--line-break 0` gives a line break after each rule in CSS, but is a **no-op in JavaScript**.
   The README described the JavaScript behaviour that has never existed
 
+### Known limitations (CSS), carried to Release 2
+
+Every entry below is one instance of a single defect class: **a pass that runs without knowing what
+region of the document it is in.** That class is what this release was about. Release 1 fixed every
+instance that its own changes touched and every instance that destroyed data; what remains is
+enumerated here rather than left unknown. Each has a regression test pinning its current behaviour,
+so none of them can drift or be half-fixed unnoticed.
+
+They are not equally serious, and the difference is worth stating plainly. The first group rewrites
+or deletes content inside one declaration; the second only leaves a comment in the output. Neither
+group loses a rule, truncates the stylesheet, or changes the exit code - those failures existed and
+were fixed.
+
+**Rewrites confined to one declaration.** Wrong output, not just unminified output.
+
+- `calc(` and `progid:…Matrix(` are matched inside strings, and the captured span's placeholder is
+  then never resolved. `a{content:"calc(1px + 2px)"}` becomes
+  `a{content:"calc(___YUICSSMIN_PRESERVED_TOKEN_0___)"}`, replacing the author's text with internal
+  scaffolding. Also reachable through an attribute selector and a `font-family` list. Pre-existing
+- `calc()` operator respacing runs after token restoration, when no string, comment or URL is
+  protected any more, so it rewrites `calc(` wherever it appears - inside a preserved `/*! … */`
+  comment, or inside a URL path. Pre-existing
+- Those two are one problem seen from two ends, which is why neither is fixed here: resolving the
+  placeholder alone restores the string's real content, which respacing then rewrites instead, so
+  the visible scaffolding would become an invisible edit of the author's text. They have to move
+  together, and that is a design change rather than a patch
+- An unquoted URL whose contents happen to spell a declaration reaches the value optimisers:
+  `url(/x/…--y:0px)` has the `0px` shortened to `0` inside the URL. Not reachable by realistic
+  URLs - `url(/img/0px-spacer.png)` and `url(/i?w=0px)` are untouched. Pre-existing
+
+**Comments that survive into the output.** A missed optimisation; nothing is altered or lost, and
+every trigger is already-invalid CSS.
+
+- After an unterminated string, later comments are not collected, so they are emitted rather than
+  stripped. A string closed by a newline behaves the same way, although CSS ends the string there
+- After an unclosed `url(`, the same thing, for the rest of the file
+- A stray quote inside an unquoted `url()` - a bad-url token - suppresses collection to the end of
+  that span. The scanner steps over the quoted region deliberately: the alternative ends the URL
+  early and deletes bytes from it, which is the corruption the release exists to remove
+
+These three are regressions from the structural comment scanner, not pre-existing behaviour: the
+context-free scan it replaced did strip these comments, by not knowing where it was - the same
+blindness that truncated whole stylesheets. Leaking a comment on malformed input is what that trade
+bought, and it is the safe direction to fail in.
+
 ### Changed (Build and tests)
 - Migrated the test suite from JUnit 4 to JUnit 5
 - The 72 golden fixture pairs (62 CSS, 10 JS) under `src/test/resources` are now actually executed
@@ -215,7 +275,7 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green
-- Test suite grew from 163 to 513 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+- Test suite grew from 163 to 521 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
   parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
