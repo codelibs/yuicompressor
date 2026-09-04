@@ -482,6 +482,66 @@ class ModernCssTest {
         assertEquals(result.replace("say \"hi", "say hi"), control, control);
     }
 
+    // data: URL white space (R38). Only a base64 payload may lose the white space
+    // inside its quoted string; every other payload is literal data.
+
+    @Test
+    void whitespaceInsideANonBase64DataUrlIsSignificant() throws Exception {
+        // The pin: SVG's viewBox grammar is four numbers separated by white space or
+        // commas, so joining them into "002424" is one invalid value rather than four.
+        // No browser is needed to adjudicate that, which is what makes it a good pin.
+        assertEquals("a{background:url(\"data:image/svg+xml,<svg viewBox='0 0 24 24'/>\")}b{color:red}",
+                compress("a{background:url(\"data:image/svg+xml,<svg viewBox='0 0 24 24'/>\")}b{color:#ff0000}"));
+
+        // A text node's rendered content, for the same reason.
+        assertEquals("a{background:url(\"data:image/svg+xml,<svg><text>hello world</text></svg>\")}",
+                compress("a{background:url(\"data:image/svg+xml,<svg><text>hello world</text></svg>\")}"));
+    }
+
+    @Test
+    void whitespaceInsideABase64DataUrlIsStillJoined() throws Exception {
+        // Load-bearing, and pinned by the dataurl-base64-linebreakindata golden: a
+        // base64 payload's white space is insignificant per RFC 2397, so joining it
+        // is a real convenience and must survive.
+        assertEquals("a{background:url(\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE=\")}b{color:red}",
+                compress("a{background:url(\"data:image/png;base64,iVBORw0KGgo\n   AAAANSUhEUg\n"
+                        + "   AAAAE=\")}b{color:#ff0000}"));
+
+        // ";base64" is the last thing before the comma, after any media-type
+        // parameter, and RFC 2045 tokens are case-insensitive.
+        assertEquals("a{background:url(\"data:text/plain;charset=UTF-8;base64,aGVsbG8gd29ybGQ=\")}b{color:red}",
+                compress("a{background:url(\"data:text/plain;charset=UTF-8;base64,aGVsbG8g\n"
+                        + " d29ybGQ=\")}b{color:#ff0000}"));
+        assertEquals("a{background:url(\"data:image/png;BASE64,iVBORw0KGgo=\")}b{color:red}",
+                compress("a{background:url(\"data:image/png;BASE64,iVBOR\n w0KGgo=\")}b{color:#ff0000}"));
+
+        // ";base64" inside the DATA is not the header, so this payload stays literal.
+        assertEquals("a{background:url(\"data:text/plain,a b;base64,c d\")}e{color:red}",
+                compress("a{background:url(\"data:text/plain,a b;base64,c d\")}e{color:#ff0000}"));
+    }
+
+    @Test
+    void whitespaceOutsideAQuotedDataUrlIsStillRemoved() throws Exception {
+        // Two goldens pin this on NON-base64 URLs - dataurl-nonbase64-noquotes has
+        // "url( data:...)" and dataurl-nonbase64-doublequotes puts the whole quoted
+        // string on its own line - so the removal cannot be conditional on the payload.
+        assertEquals("a{background:url(\"data:image/png,%89PNG%0D%0A\")}b{color:red}",
+                compress("a{background:url(\n   \"data:image/png,%89PNG%0D%0A\"\n )}b{color:#ff0000}"));
+        assertEquals("a{background:url(data:image/png,%89PNG%0D%0A)}b{color:red}",
+                compress("a{background:url( data:image/png,%89PNG%0D%0A)}b{color:#ff0000}"));
+    }
+
+    @Test
+    void dataUrlWhitespaceHandlingDoesNotReachOtherUrls() throws Exception {
+        // Percent-encoded SVG - the machine-generated style - was never affected, which
+        // is how the defect survived; and only data: URLs are preserved by that rule at
+        // all, so an ordinary quoted URL keeps its space either way.
+        assertEquals("a{background:url(\"data:image/svg+xml,<svg%20viewBox=%270%200%2024%2024%27/>\")}",
+                compress("a{background:url(\"data:image/svg+xml,<svg%20viewBox=%270%200%2024%2024%27/>\")}"));
+        assertEquals("a{background:url(\"/img/my file.png\")}b{color:red}",
+                compress("a{background:url(\"/img/my file.png\")}b{color:#ff0000}"));
+    }
+
     // ------------------------------------------------------------------
     // KNOWN DEFECTS, deferred to Release 2 by ruling R37. The two tests below pin
     // WRONG output, not correct output. They exist because the two defects are one

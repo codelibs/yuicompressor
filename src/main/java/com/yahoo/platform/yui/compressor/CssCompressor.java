@@ -34,7 +34,9 @@ public class CssCompressor {
      * @param css - full css string
      * @param preservedToken - token to preserve
      * @param tokenRegex - regex to find token
-     * @param removeWhiteSpace - remove any white space in the token
+     * @param removeWhiteSpace - collapse insignificant white space in the token, as
+     *        {@link #stripDataUrlWhitespace} defines "insignificant". Only the
+     *        {@code data:} URL call site passes true
      * @param preservedTokens - array of token values
      * @return
      */
@@ -84,7 +86,7 @@ public class CssCompressor {
             if (foundTerminator) {
                 String token = css.substring(startIndex, endIndex);
                 if(removeWhiteSpace)
-                    token = token.replaceAll("\\s+", "");
+                    token = stripDataUrlWhitespace(token);
                 preservedTokens.add(token);
 
                 String preserver = preservedToken + "(___YUICSSMIN_PRESERVED_TOKEN_" + (preservedTokens.size() - 1) + "___)";
@@ -101,6 +103,95 @@ public class CssCompressor {
         sb.append(css.substring(appendIndex));
 
         return sb.toString();
+    }
+
+    /**
+     * Removes the white space in a captured {@code data:} URL that is genuinely
+     * insignificant, and only that. The token runs from just after {@code url(} to
+     * just before the closing {@code )}, so it carries the quotes when there are any.
+     *
+     * <p>This used to be a flat {@code token.replaceAll("\\s+", "")} over the whole
+     * span, which deleted white space from inside the quoted string as well. In a
+     * base64 payload that is a convenience; in any other payload it destroys author
+     * data, silently and with exit code 0, on CSS that is perfectly valid:
+     *
+     * <pre>
+     * url("data:image/svg+xml,&lt;svg viewBox='0 0 24 24'&gt;&lt;text&gt;hello world&lt;/text&gt;&lt;/svg&gt;")
+     *   -&gt; viewBox='002424'  and  &lt;text&gt;helloworld&lt;/text&gt;
+     * </pre>
+     *
+     * SVG's {@code viewBox} grammar is four numbers separated by white space or
+     * commas, so {@code 002424} is one invalid value rather than four - no browser is
+     * needed to see that the image is broken - and the text node's rendered content
+     * changed. The percent-encoded spelling ({@code %20}) was unaffected, which is why
+     * this survived: it is the machine-generated style, and the literal-space style is
+     * the hand-written one.
+     *
+     * <p>Three regions, three different answers:
+     *
+     * <ul>
+     * <li><b>Outside the quotes</b> - always removed. CSS allows white space between
+     * {@code url(} and the quote and before the {@code )}, and it means nothing there.
+     * Two goldens pin this on <em>non-base64</em> URLs, so it cannot be conditional on
+     * the payload: {@code dataurl-nonbase64-noquotes} has {@code url( data:...)} and
+     * {@code dataurl-nonbase64-doublequotes} puts the whole quoted string on its own
+     * line.
+     * <li><b>Inside the quotes, base64 payload</b> - removed. RFC 2397 defines
+     * {@code dataurl := "data:" [ mediatype ] [ ";base64" ] "," data}, and a base64
+     * payload's white space is insignificant, so joining it is safe. This is
+     * load-bearing: {@code dataurl-base64-linebreakindata} splits its payload across
+     * three lines inside the string and its golden is one line.
+     * <li><b>Inside the quotes, any other payload</b> - kept. The data is literal, so
+     * every character of it is significant.
+     * </ul>
+     *
+     * <p>The unquoted form has no "inside the quotes" and keeps the old behaviour of
+     * losing all of its white space. Nothing legal is destroyed by that: white space
+     * inside an unquoted url-token, other than at the ends, makes it a bad-url-token
+     * (CSS Syntax Level 3 &sect;4.3.6), so such input is already invalid CSS.
+     *
+     * <p>One deliberate consequence. A <em>non-base64</em> quoted data URL split
+     * across lines is no longer joined. A newline inside a CSS string is a parse
+     * error, so that input was already invalid; joining it used to repair it by
+     * accident, and the repair is indistinguishable from the corruption above - both
+     * are "delete a character the author wrote". Preserving is the safe direction.
+     */
+    private static String stripDataUrlWhitespace(String token) {
+        int start = 0;
+        while (start < token.length() && Character.isWhitespace(token.charAt(start))) {
+            start++;
+        }
+        if (start >= token.length()) {
+            return "";
+        }
+        char quote = token.charAt(start);
+        if (quote != '"' && quote != '\'') {
+            return token.replaceAll("\\s+", "");
+        }
+        int end = token.indexOf(quote, start + 1);
+        if (end < 0) {
+            // Unterminated: no string to protect, so behave as before.
+            return token.replaceAll("\\s+", "");
+        }
+        String payload = token.substring(start + 1, end);
+        if (isBase64DataUrl(payload)) {
+            payload = payload.replaceAll("\\s+", "");
+        }
+        return quote + payload + quote + token.substring(end + 1).replaceAll("\\s+", "");
+    }
+
+    /**
+     * Whether a {@code data:} URL's content is base64-encoded, per RFC 2397's
+     * {@code dataurl := "data:" [ mediatype ] [ ";base64" ] "," data}. The
+     * {@code ";base64"} comes last in the header, after any media-type parameters, so
+     * the test is on what precedes the first comma - which is why
+     * {@code data:text/plain;charset=UTF-8;base64,...} is recognised and a
+     * {@code ";base64"} appearing later, in the data itself, is not. Matched
+     * case-insensitively, as RFC 2045 tokens are.
+     */
+    private static boolean isBase64DataUrl(String payload) {
+        int comma = payload.indexOf(',');
+        return comma >= 0 && payload.regionMatches(true, comma - ";base64".length(), ";base64", 0, ";base64".length());
     }
 
     /**
