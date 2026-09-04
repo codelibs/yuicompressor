@@ -3,7 +3,7 @@ YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 
 ![Java CI](https://github.com/codelibs/yuicompressor/workflows/Java%20CI%20with%20Maven/badge.svg)
 
-**Version**: 2.4.10-SNAPSHOT
+**Version**: 2.4.11-SNAPSHOT
 **Group ID**: org.codelibs
 **Java**: 11+
 
@@ -50,12 +50,12 @@ This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
 mvn clean package
 ```
 
-The compiled JAR will be available at `target/yuicompressor-2.4.10-SNAPSHOT.jar`
+The compiled JAR will be available at `target/yuicompressor-2.4.11-SNAPSHOT.jar`
 
 To run the JAR:
 
 ```bash
-java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
+java -jar target/yuicompressor-2.4.11-SNAPSHOT.jar [options] [input file]
 ```
 
 To install to local Maven repository:
@@ -124,8 +124,8 @@ Options:
 * `type` // defaults to 'js'
 * `line-break`
 * `nomunge`
-* `preserve-semi`
-* `disable-optimizations`
+* `preserve-semi` // accepted and ignored, see the CLI option below
+* `disable-optimizations` // accepted and ignored, see the CLI option below
 
 
 ## Migration from Ant to Maven
@@ -141,11 +141,6 @@ This project has been migrated from Ant to Maven. The following changes have bee
 
 For contributors familiar with the old structure, please refer to the documentation in `docs/` for the new organization.
 
-Build Status
-------------
-
-[![Build Status](https://secure.travis-ci.org/yui/yuicompressor.svg?branch=master)](http://travis-ci.org/yui/yuicompressor)
-
 
 Global Options
 --------------
@@ -158,8 +153,14 @@ Global Options
         say 8000 characters. The linebreak option is used in that case to split
         long lines after a specific column. It can also be used to make the code
         more readable, easier to debug (especially with the MS Script Debugger)
-        Specify 0 to get a line break after each semi-colon in JavaScript, and
-        after each rule in CSS.
+        A break is only ever inserted at a syntactically safe offset - between
+        statements in JavaScript, after a rule in CSS, never inside a token - so
+        a single statement or rule longer than the requested column is left on
+        one line rather than cut.
+        Specify 0 to get a line break after each rule in CSS. In JavaScript 0 is
+        a no-op: the JavaScript path requires a positive column, so it does NOT
+        give "a line break after each semi-colon" as earlier versions of this
+        document claimed. Use --line-break 1 for that.
 
     --type js|css
         The type of compressor (JavaScript or CSS) is chosen based on the
@@ -183,7 +184,10 @@ Global Options
         ... will minify all .css files and save them as -min.css
 
     -v, --verbose
-        Display informational messages and warnings.
+        MOSTLY UNIMPLEMENTED. The flag reaches the CLI, where it enables one
+        informational line ("Using charset ...") when the requested charset is
+        unsupported and UTF-8 is substituted. The compressors themselves never
+        read it, so no other informational message or warning is produced.
 
 JavaScript Only Options
 -----------------------
@@ -192,11 +196,13 @@ JavaScript Only Options
         Minify only. Do not obfuscate local symbols.
 
     --preserve-semi
+        NOT CURRENTLY IMPLEMENTED - accepted and ignored.
         Preserve unnecessary semicolons (such as right before a '}') This option
         is useful when compressed code has to be run through JSLint (which is the
         case of YUI for example)
 
     --disable-optimizations
+        NOT CURRENTLY IMPLEMENTED - accepted and ignored.
         Disable all the built-in micro optimizations.
 
 Notes
@@ -208,9 +214,15 @@ Notes
 
 * The YUI Compressor requires Java version >= 11.
 
-* It is possible to prevent a local variable, nested function or function
-argument from being obfuscated by using "hints". A hint is a string that
-is located at the very beginning of a function body like so:
+* "Hints" are NOT CURRENTLY IMPLEMENTED. The syntax below is accepted by the
+parser like any other string statement, but the named symbols are obfuscated
+anyway AND the hint string is emitted into the compressed output as a live
+statement rather than disappearing. Restoring hint support is Release 2 work;
+until then, use `--nomunge` if a symbol's name must survive.
+
+  It was possible in earlier versions to prevent a local variable, nested
+function or function argument from being obfuscated by using "hints". A hint is
+a string that is located at the very beginning of a function body like so:
     
 ```
 function fn (arg1, arg2, arg3) {
@@ -227,7 +239,8 @@ function fn (arg1, arg2, arg3) {
     ...
 }
 ```
-The hint itself disappears from the compressed file.
+The hint itself used to disappear from the compressed file. It no longer does;
+see the note above.
 
 * C-style comments starting with `/*!` are preserved. This is useful with
     comments containing copyright/license information. As of 2.4.8, the '!'

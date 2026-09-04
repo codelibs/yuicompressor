@@ -1,12 +1,12 @@
 package org.codelibs.yuicompressor;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import com.yahoo.platform.yui.compressor.JavaScriptCompressor;
 
@@ -17,7 +17,7 @@ public class JavaScriptCompressorTest {
 
     private StringWriter output;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         output = new StringWriter();
     }
@@ -31,8 +31,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should remove whitespace", result.length() < input.length());
-        assertTrue("Should contain var", result.contains("var"));
+        assertTrue(result.length() < input.length(), "Should remove whitespace");
+        assertTrue(result.contains("var"), "Should contain var");
     }
 
     @Test
@@ -44,8 +44,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertFalse("Variable should be obfuscated", result.contains("longVariableName"));
-        assertTrue("Function should remain", result.contains("function test()"));
+        assertFalse(result.contains("longVariableName"), "Variable should be obfuscated");
+        assertTrue(result.contains("function test()"), "Function should remain");
     }
 
     @Test
@@ -57,7 +57,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, false, false, false, false);
 
         String result = output.toString();
-        assertTrue("Variable should not be obfuscated with nomunge", result.contains("myVar"));
+        assertTrue(result.contains("myVar"), "Variable should not be obfuscated with nomunge");
     }
 
     @Test
@@ -69,8 +69,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertFalse("Comments should be removed", result.contains("This is a comment"));
-        assertTrue("Code should remain", result.contains("var"));
+        assertFalse(result.contains("This is a comment"), "Comments should be removed");
+        assertTrue(result.contains("var"), "Code should remain");
     }
 
     @Test
@@ -82,8 +82,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain function", result.contains("function"));
-        assertTrue("Should contain return", result.contains("return"));
+        assertTrue(result.contains("function"), "Should contain function");
+        assertTrue(result.contains("return"), "Should contain return");
     }
 
     @Test
@@ -95,8 +95,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Keep comment should be preserved", result.contains("Important license comment"));
-        assertTrue("Code should remain", result.contains("var"));
+        assertTrue(result.contains("Important license comment"), "Keep comment should be preserved");
+        assertTrue(result.contains("var"), "Code should remain");
     }
 
     @Test
@@ -108,7 +108,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Conditional comment should be preserved", result.contains("@cc_on"));
+        assertTrue(result.contains("@cc_on"), "Conditional comment should be preserved");
     }
 
     @Test
@@ -121,10 +121,10 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Function foo should be preserved", result.contains("foo"));
-        assertTrue("Function bar should be preserved", result.contains("bar"));
-        assertFalse("Variable x should be munged", result.contains("var x"));
-        assertFalse("Variable y should be munged", result.contains("var y"));
+        assertTrue(result.contains("foo"), "Function foo should be preserved");
+        assertTrue(result.contains("bar"), "Function bar should be preserved");
+        assertFalse(result.contains("var x"), "Variable x should be munged");
+        assertFalse(result.contains("var y"), "Variable y should be munged");
     }
 
     @Test
@@ -136,9 +136,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Function outer should be preserved", result.contains("outer"));
-        assertTrue("Function inner should be preserved", result.contains("inner"));
-        assertTrue("Should contain return", result.contains("return"));
+        assertTrue(result.contains("outer"), "Function outer should be preserved");
+        assertTrue(result.contains("inner"), "Function inner should be preserved");
+        assertTrue(result.contains("return"), "Should contain return");
     }
 
     @Test
@@ -150,10 +150,10 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Function name should be preserved", result.contains("add"));
+        assertTrue(result.contains("add"), "Function name should be preserved");
         // Parameters should be munged to shorter names
-        assertFalse("param1 should be munged", result.contains("param1"));
-        assertFalse("param2 should be munged", result.contains("param2"));
+        assertFalse(result.contains("param1"), "param1 should be munged");
+        assertFalse(result.contains("param2"), "param2 should be munged");
     }
 
     @Test
@@ -166,7 +166,7 @@ public class JavaScriptCompressorTest {
 
         String result = output.toString();
         // Property names should not be munged
-        assertTrue("Property name should not be munged", result.contains("property"));
+        assertTrue(result.contains("property"), "Property name should not be munged");
     }
 
     @Test
@@ -178,7 +178,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String literal should be preserved", result.contains("Hello, World!"));
+        assertTrue(result.contains("Hello, World!"), "String literal should be preserved");
     }
 
     @Test
@@ -190,8 +190,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Number literals should be preserved",
-            result.contains("3.14159") && result.contains("1000000"));
+        assertTrue(result.contains("3.14159") && result.contains("1000000"),
+            "Number literals should be preserved");
     }
 
     @Test
@@ -203,8 +203,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain operators",
-            result.contains("+") && result.contains("*") && result.contains("/"));
+        assertTrue(result.contains("+") && result.contains("*") && result.contains("/"),
+            "Should contain operators");
     }
 
     @Test
@@ -216,7 +216,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Array brackets should be preserved", result.contains("[") && result.contains("]"));
+        assertTrue(result.contains("[") && result.contains("]"), "Array brackets should be preserved");
     }
 
     @Test
@@ -228,8 +228,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Object braces should be preserved", result.contains("{") && result.contains("}"));
-        assertTrue("Keys should be preserved", result.contains("key1") && result.contains("key2"));
+        assertTrue(result.contains("{") && result.contains("}"), "Object braces should be preserved");
+        assertTrue(result.contains("key1") && result.contains("key2"), "Keys should be preserved");
     }
 
     @Test
@@ -241,8 +241,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Function calls should be preserved",
-            result.contains("console") && result.contains("log") && result.contains("alert"));
+        assertTrue(result.contains("console") && result.contains("log") && result.contains("alert"),
+            "Function calls should be preserved");
     }
 
     @Test
@@ -254,8 +254,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertFalse("Regular block comment should be removed", result.contains("Regular block comment"));
-        assertTrue("Code should remain", result.contains("var"));
+        assertFalse(result.contains("Regular block comment"), "Regular block comment should be removed");
+        assertTrue(result.contains("var"), "Code should remain");
     }
 
     @Test
@@ -268,8 +268,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertFalse("Long variable names should be munged",
-            result.contains("longName1") || result.contains("longName2") || result.contains("longName3"));
+        assertFalse(result.contains("longName1") || result.contains("longName2") || result.contains("longName3"),
+            "Long variable names should be munged");
     }
 
     @Test
@@ -281,8 +281,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Function name should be preserved", result.contains("empty"));
-        assertTrue("Function should be valid", result.contains("function") && result.contains("{}"));
+        assertTrue(result.contains("empty"), "Function name should be preserved");
+        assertTrue(result.contains("function") && result.contains("{}"), "Function should be valid");
     }
 
     @Test
@@ -294,8 +294,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, false, false, false, false);
 
         String result = output.toString();
-        assertTrue("Let keyword should be preserved", result.contains("let"));
-        assertTrue("Const keyword should be preserved", result.contains("const"));
+        assertTrue(result.contains("let"), "Let keyword should be preserved");
+        assertTrue(result.contains("const"), "Const keyword should be preserved");
     }
 
     @Test
@@ -307,8 +307,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("IIFE should be preserved", result.contains("function"));
-        assertTrue("Should contain parentheses", result.contains("()"));
+        assertTrue(result.contains("function"), "IIFE should be preserved");
+        assertTrue(result.contains("()"), "Should contain parentheses");
     }
 
     // Tests for string literal protection during whitespace compression
@@ -322,7 +322,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with comma-space should be preserved", result.contains("a, b, c"));
+        assertTrue(result.contains("a, b, c"), "String with comma-space should be preserved");
     }
 
     @Test
@@ -334,7 +334,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with semicolon-space should be preserved", result.contains("statement; another"));
+        assertTrue(result.contains("statement; another"), "String with semicolon-space should be preserved");
     }
 
     @Test
@@ -346,7 +346,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with braces and spaces should be preserved", result.contains("{ key: value }"));
+        assertTrue(result.contains("{ key: value }"), "String with braces and spaces should be preserved");
     }
 
     @Test
@@ -358,7 +358,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with parentheses and spaces should be preserved", result.contains("call( arg )"));
+        assertTrue(result.contains("call( arg )"), "String with parentheses and spaces should be preserved");
     }
 
     @Test
@@ -370,9 +370,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("First string should be preserved", result.contains("Hello, World!"));
-        assertTrue("Second string should be preserved", result.contains("foo; bar"));
-        assertTrue("Third string should be preserved", result.contains("( test )"));
+        assertTrue(result.contains("Hello, World!"), "First string should be preserved");
+        assertTrue(result.contains("foo; bar"), "Second string should be preserved");
+        assertTrue(result.contains("( test )"), "Third string should be preserved");
     }
 
     @Test
@@ -384,8 +384,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with escaped quotes should be preserved",
-            result.contains("He said \\\"Hello, World!\\\""));
+        assertTrue(result.contains("He said \\\"Hello, World!\\\""),
+            "String with escaped quotes should be preserved");
     }
 
     @Test
@@ -397,8 +397,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with escaped backslashes should be preserved",
-            result.contains("path\\\\to\\\\file"));
+        assertTrue(result.contains("path\\\\to\\\\file"),
+            "String with escaped backslashes should be preserved");
     }
 
     @Test
@@ -410,7 +410,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Single-quoted string should be preserved", result.contains("Hello, World!"));
+        assertTrue(result.contains("Hello, World!"), "Single-quoted string should be preserved");
     }
 
     @Test
@@ -422,8 +422,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Double-quoted string should be preserved", result.contains("double, quotes"));
-        assertTrue("Single-quoted string should be preserved", result.contains("single; quotes"));
+        assertTrue(result.contains("double, quotes"), "Double-quoted string should be preserved");
+        assertTrue(result.contains("single; quotes"), "Single-quoted string should be preserved");
     }
 
     @Test
@@ -435,8 +435,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with all compression patterns should be preserved",
-            result.contains("a, b; c{ d }( e )"));
+        assertTrue(result.contains("a, b; c{ d }( e )"),
+            "String with all compression patterns should be preserved");
     }
 
     @Test
@@ -448,9 +448,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("First string should be preserved", result.contains("first, "));
-        assertTrue("Second string should be preserved", result.contains("second; "));
-        assertTrue("Third string should be preserved", result.contains("third{ }"));
+        assertTrue(result.contains("first, "), "First string should be preserved");
+        assertTrue(result.contains("second; "), "Second string should be preserved");
+        assertTrue(result.contains("third{ }"), "Third string should be preserved");
     }
 
     @Test
@@ -462,7 +462,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String in function call should be preserved", result.contains("Hello, World!"));
+        assertTrue(result.contains("Hello, World!"), "String in function call should be preserved");
     }
 
     @Test
@@ -474,7 +474,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with newline escape should be preserved", result.contains("line1\\nline2"));
+        assertTrue(result.contains("line1\\nline2"), "String with newline escape should be preserved");
     }
 
     @Test
@@ -486,7 +486,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with tab escape should be preserved", result.contains("col1\\tcol2"));
+        assertTrue(result.contains("col1\\tcol2"), "String with tab escape should be preserved");
     }
 
     @Test
@@ -498,7 +498,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Empty string should be preserved", result.contains("\"\"") || result.contains("''"));
+        assertTrue(result.contains("\"\"") || result.contains("''"), "Empty string should be preserved");
     }
 
     @Test
@@ -510,8 +510,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("String with only spaces should preserve at least some spaces",
-            result.contains("\"") && result.length() > 10);
+        assertTrue(result.contains("\"") && result.length() > 10,
+            "String with only spaces should preserve at least some spaces");
     }
 
     // Tests for control flow structures and operators
@@ -525,10 +525,10 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain function keyword", result.contains("function"));
-        assertTrue("Should contain if keyword", result.contains("if"));
-        assertTrue("Should contain else keyword", result.contains("else"));
-        assertTrue("Should contain return keyword", result.contains("return"));
+        assertTrue(result.contains("function"), "Should contain function keyword");
+        assertTrue(result.contains("if"), "Should contain if keyword");
+        assertTrue(result.contains("else"), "Should contain else keyword");
+        assertTrue(result.contains("return"), "Should contain return keyword");
     }
 
     @Test
@@ -540,8 +540,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain for keyword", result.contains("for"));
-        assertFalse("Should not contain syntax errors", result.isEmpty());
+        assertTrue(result.contains("for"), "Should contain for keyword");
+        assertFalse(result.isEmpty(), "Should not contain syntax errors");
     }
 
     @Test
@@ -553,8 +553,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain while keyword", result.contains("while"));
-        assertFalse("Should not be empty", result.isEmpty());
+        assertTrue(result.contains("while"), "Should contain while keyword");
+        assertFalse(result.isEmpty(), "Should not be empty");
     }
 
     @Test
@@ -566,9 +566,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain try keyword", result.contains("try"));
-        assertTrue("Should contain catch keyword", result.contains("catch"));
-        assertTrue("Should contain finally keyword", result.contains("finally"));
+        assertTrue(result.contains("try"), "Should contain try keyword");
+        assertTrue(result.contains("catch"), "Should contain catch keyword");
+        assertTrue(result.contains("finally"), "Should contain finally keyword");
     }
 
     @Test
@@ -580,9 +580,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain switch keyword", result.contains("switch"));
-        assertTrue("Should contain case keyword", result.contains("case"));
-        assertTrue("Should contain default keyword", result.contains("default"));
+        assertTrue(result.contains("switch"), "Should contain switch keyword");
+        assertTrue(result.contains("case"), "Should contain case keyword");
+        assertTrue(result.contains("default"), "Should contain default keyword");
     }
 
     @Test
@@ -594,8 +594,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain regex pattern", result.contains("/[a-z]+/gi") || result.contains("RegExp"));
-        assertTrue("Should contain test method call", result.contains("test"));
+        assertTrue(result.contains("/[a-z]+/gi") || result.contains("RegExp"), "Should contain regex pattern");
+        assertTrue(result.contains("test"), "Should contain test method call");
     }
 
     @Test
@@ -607,9 +607,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain true", result.contains("true"));
-        assertTrue("Should contain false", result.contains("false"));
-        assertTrue("Should contain null", result.contains("null"));
+        assertTrue(result.contains("true"), "Should contain true");
+        assertTrue(result.contains("false"), "Should contain false");
+        assertTrue(result.contains("null"), "Should contain null");
     }
 
     @Test
@@ -621,9 +621,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain ternary operator", result.contains("?") && result.contains(":"));
-        assertTrue("Should contain positive", result.contains("positive"));
-        assertTrue("Should contain negative", result.contains("negative"));
+        assertTrue(result.contains("?") && result.contains(":"), "Should contain ternary operator");
+        assertTrue(result.contains("positive"), "Should contain positive");
+        assertTrue(result.contains("negative"), "Should contain negative");
     }
 
     @Test
@@ -635,8 +635,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain comparison operators",
-            result.contains("==") || result.contains("!=") || result.contains("<") || result.contains(">"));
+        assertTrue(result.contains("==") || result.contains("!=") || result.contains("<") || result.contains(">"),
+            "Should contain comparison operators");
     }
 
     @Test
@@ -648,8 +648,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain logical operators",
-            result.contains("&&") || result.contains("||") || result.contains("!"));
+        assertTrue(result.contains("&&") || result.contains("||") || result.contains("!"),
+            "Should contain logical operators");
     }
 
     @Test
@@ -661,9 +661,9 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain new keyword", result.contains("new"));
-        assertTrue("Should contain Object", result.contains("Object"));
-        assertTrue("Should contain Array", result.contains("Array"));
+        assertTrue(result.contains("new"), "Should contain new keyword");
+        assertTrue(result.contains("Object"), "Should contain Object");
+        assertTrue(result.contains("Array"), "Should contain Array");
     }
 
     @Test
@@ -675,8 +675,8 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain this keyword", result.contains("this"));
-        assertTrue("Should contain value property", result.contains("value"));
+        assertTrue(result.contains("this"), "Should contain this keyword");
+        assertTrue(result.contains("value"), "Should contain value property");
     }
 
     @Test
@@ -688,7 +688,7 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain increment/decrement", result.contains("++") || result.contains("--"));
+        assertTrue(result.contains("++") || result.contains("--"), "Should contain increment/decrement");
     }
 
     @Test
@@ -708,12 +708,76 @@ public class JavaScriptCompressorTest {
         compressor.compress(output, -1, true, false, false, false);
 
         String result = output.toString();
-        assertTrue("Should contain function keyword", result.contains("function"));
-        assertTrue("Should contain for keyword", result.contains("for"));
-        assertTrue("Should contain if keyword", result.contains("if"));
-        assertTrue("Should contain try keyword", result.contains("try"));
-        assertTrue("Should contain catch keyword", result.contains("catch"));
-        assertFalse("Should not be empty", result.isEmpty());
+        assertTrue(result.contains("function"), "Should contain function keyword");
+        assertTrue(result.contains("for"), "Should contain for keyword");
+        assertTrue(result.contains("if"), "Should contain if keyword");
+        assertTrue(result.contains("try"), "Should contain try keyword");
+        assertTrue(result.contains("catch"), "Should contain catch keyword");
+        assertFalse(result.isEmpty(), "Should not be empty");
+    }
+
+    // ScopeBuilder's generic child traversal walks Rhino's low-level Node
+    // chain (getFirstChild()/getNext()), which is only populated for
+    // list-style containers like Block. AST nodes that keep their children in
+    // typed fields (FunctionCall arguments, ObjectLiteral property values,
+    // ArrayLiteral elements, ...) are invisible to it, so a function
+    // expression sitting in one of those positions never gets a scope and its
+    // parameters are never munged.
+
+    @Test
+    public void testFunctionExpressionAsCallArgumentIsMunged() throws Exception {
+        String input = "p.then(function(longParamName){ return longParamName; });";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression passed as a call argument should be munged");
+    }
+
+    @Test
+    public void testFunctionExpressionAsObjectPropertyValueIsMunged() throws Exception {
+        String input = "var o = { m: function(longParamName){ return longParamName; } };";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression used as an object literal property value should be munged");
+    }
+
+    @Test
+    public void testFunctionExpressionAsArrayElementIsMunged() throws Exception {
+        String input = "var arr = [ function(longParamName){ return longParamName; } ];";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("longParamName"),
+            "Parameter of a function expression used as an array literal element should be munged");
+    }
+
+    @Test
+    public void testVariableDeclaredInsideIfBlockIsMunged() throws Exception {
+        // ScopeBuilder's traversal gap is not limited to function expressions:
+        // IfStatement, WhileLoop, and most other single/fixed-arity-child AST
+        // nodes also store their children in typed fields only, so a `var`
+        // declared inside an if-block was never discovered either.
+        String input = "function outer(x) { if (x) { var innerVariableName = 1; } return innerVariableName; }";
+
+        JavaScriptCompressor compressor = new JavaScriptCompressor(
+            new StringReader(input), null);
+        compressor.compress(output, -1, true, false, false, false);
+
+        String result = output.toString();
+        assertFalse(result.contains("innerVariableName"),
+            "Variable declared inside an if-block should be munged");
     }
 }
 

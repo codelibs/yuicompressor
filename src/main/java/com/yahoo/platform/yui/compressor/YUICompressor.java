@@ -88,6 +88,7 @@ public class YUICompressor {
 
         Reader in = null;
         Writer out = null;
+        boolean outIsStdout = false;
         Writer mungemap = null;
 
         try {
@@ -218,17 +219,22 @@ public class YUICompressor {
                             in.close();
                             in = null;
 
-                            if (outputFilename == null) {
-                                out = new OutputStreamWriter(System.out, charset);
-                            } else {
-                                out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
-                                if (mungemap != null) {
-                                    mungemap.write("\n\nFile: " + outputFilename + "\n\n");
-                                }
+                            // Compress into memory first. Opening the destination
+                            // truncates it, so doing that before a compression that can
+                            // fail destroyed the file the run was meant to produce - and
+                            // with "-o" pointing at the input, the source itself. See
+                            // writeOutput below.
+                            StringWriter compressed = new StringWriter();
+                            if (outputFilename != null && mungemap != null) {
+                                mungemap.write("\n\nFile: " + outputFilename + "\n\n");
                             }
 
-                            compressor.compress(out, mungemap, linebreakpos, munge, verbose,
+                            compressor.compress(compressed, mungemap, linebreakpos, munge, verbose,
                                     preserveSemi, disableOptimizations, preserveHints);
+
+                            outIsStdout = outputFilename == null;
+                            out = openOutput(outputFilename, charset);
+                            out.write(compressed.toString());
 
                         } catch (EvaluatorException e) {
                             e.printStackTrace();
@@ -243,17 +249,24 @@ public class YUICompressor {
                         in.close();
                         in = null;
 
-                        if (outputFilename == null) {
-                            out = new OutputStreamWriter(System.out, charset);
-                        } else {
-                            out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
-                        }
+                        // Compress into memory first; see the JavaScript branch above.
+                        StringWriter compressed = new StringWriter();
+                        compressor.compress(compressed, linebreakpos);
 
-                        compressor.compress(out, linebreakpos);
+                        outIsStdout = outputFilename == null;
+                        out = openOutput(outputFilename, charset);
+                        out.write(compressed.toString());
                     }
 
                 } catch (IOException e) {
                     e.printStackTrace();
+                    System.exit(1);
+                } catch (IllegalArgumentException e) {
+                    // A deliberate refusal - malformed input the compressor will not
+                    // guess at. It is a diagnosis, not a crash, so it is reported as
+                    // one: letting it leave main printed "Exception in thread main"
+                    // and a stack trace over a message written to be read.
+                    System.err.println("[ERROR] " + inputFilename + ": " + e.getMessage());
                     System.exit(1);
                 } finally {
                     if (in != null) {
@@ -266,10 +279,18 @@ public class YUICompressor {
 
                     if (out != null) {
                         try {
-                            out.close();
+                            // Closing a writer around System.out closes System.out, and
+                            // every later file in the same run then wrote to a closed
+                            // stream and was silently discarded. Only a file is closed.
+                            if (outIsStdout) {
+                                out.flush();
+                            } else {
+                                out.close();
+                            }
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
+                        out = null;
                     }
                 }
             }
@@ -282,6 +303,18 @@ public class YUICompressor {
                 }
             }
         }
+    }
+
+    /**
+     * Opens the destination, or a writer onto stdout when there is no destination.
+     * Called only once the compressed text exists, so a refusal cannot truncate a
+     * file that already holds good output.
+     */
+    private static Writer openOutput(String outputFilename, String charset) throws IOException {
+        if (outputFilename == null) {
+            return new OutputStreamWriter(System.out, charset);
+        }
+        return new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
     }
 
     private void version() {

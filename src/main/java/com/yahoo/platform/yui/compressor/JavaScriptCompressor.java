@@ -173,6 +173,10 @@ public class JavaScriptCompressor {
     private AstRoot ast;
     private ScopeBuilder scopeBuilder;
     private ScriptOrFnScope globalScope;
+    // Kept so MungedCodeGenerator can read the original operator text for
+    // optional chaining (Rhino's QUESTION_DOT node type does not, on its own,
+    // say which link of a chain actually carries "?.").
+    private String sourceText;
 
     public JavaScriptCompressor(Reader in, ErrorReporter reporter)
             throws IOException, EvaluatorException {
@@ -208,6 +212,7 @@ public class JavaScriptCompressor {
             sourceCode.append(buffer, 0, read);
         }
         String source = sourceCode.toString();
+        this.sourceText = source;
 
         // Scan for special comments before parsing
         scanForSpecialComments(source);
@@ -261,7 +266,21 @@ public class JavaScriptCompressor {
         }
     }
 
-    // 6-parameter version (for backward compatibility)
+    /**
+     * 6-parameter version (for backward compatibility). Delegates to the
+     * 8-parameter version below; see its javadoc for which parameters are
+     * currently ignored.
+     *
+     * @param out the writer to receive the compressed output
+     * @param linebreakpos target maximum line length; 0 or less inserts no
+     *        line breaks (the "0 breaks after every semi-colon" behaviour the
+     *        README used to describe has never been implemented)
+     * @param munge whether to rename local symbols
+     * @param verbose <b>currently ignored.</b> Never read
+     * @param preserveAllSemiColons <b>currently ignored.</b> Never read; the
+     *        generator emits only the semicolons the syntax requires either way
+     * @param disableOptimizations <b>currently ignored.</b> Never read
+     */
     public void compress(Writer out, int linebreakpos,
                         boolean munge, boolean verbose,
                         boolean preserveAllSemiColons, boolean disableOptimizations)
@@ -270,7 +289,37 @@ public class JavaScriptCompressor {
                 preserveAllSemiColons, disableOptimizations, false);
     }
 
-    // 8-parameter version (main implementation)
+    /**
+     * 8-parameter version (main implementation).
+     *
+     * <p>Four of these parameters are accepted and never read. They are kept
+     * because the signature is public API that a downstream maven plugin calls
+     * directly, and because dropping them would silently change which overload
+     * a caller binds to. Implementing the behaviour they promise is Release 2
+     * work; documenting the gap is the Release 1 fix, so that a caller passing
+     * {@code preserveAllSemiColons=true} is not left believing it took effect.
+     *
+     * @param out the writer to receive the compressed output
+     * @param mungemap if non-null and {@code munge} is true, receives the
+     *        original-to-munged symbol mapping
+     * @param linebreakpos target maximum line length; 0 or less inserts no
+     *        line breaks. Breaks land only between statements, never inside a
+     *        token, so a statement longer than this is left on one line
+     * @param munge whether to rename local symbols
+     * @param verbose <b>currently ignored.</b> Never read; no informational
+     *        messages are emitted regardless
+     * @param preserveAllSemiColons <b>currently ignored.</b> Never read. The
+     *        README documents this as {@code --preserve-semi}; it has no
+     *        effect. The generator emits only the semicolons the syntax
+     *        requires, and removing the ones it does emit before a "}" is a
+     *        separate optimisation this version does not perform either
+     * @param disableOptimizations <b>currently ignored.</b> Never read. The
+     *        README documents this as {@code --disable-optimizations}; it has
+     *        no effect
+     * @param preserveUnknownHints <b>currently ignored.</b> Never read.
+     *        {@code "name:nomunge"} hints are neither honoured nor stripped -
+     *        see the {@code _munge.js} entry in JsGoldenFileTest's quarantine
+     */
     public void compress(Writer out, Writer mungemap, int linebreakpos,
                         boolean munge, boolean verbose,
                         boolean preserveAllSemiColons, boolean disableOptimizations,
@@ -286,39 +335,22 @@ public class JavaScriptCompressor {
                     this.globalScope.munge();
                 }
 
-                // Generate code with munged variable names
-                MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge);
+                // Generate code with munged variable names. The generator emits only
+                // the separators the syntax genuinely requires, so its output is
+                // already minified; nothing here may run a regex over it, since that
+                // cannot tell generated syntax apart from string/template/regex
+                // literal contents.
+                MungedCodeGenerator generator = new MungedCodeGenerator(this.scopeBuilder, munge, this.sourceText);
                 compressed = generator.generate(this.ast);
 
-                // Extract string literals to protect them from whitespace compression
-                java.util.List<String> stringLiterals = new java.util.ArrayList<>();
-                compressed = extractStringLiterals(compressed, stringLiterals);
-
-                // Remove extra whitespace
-                compressed = compressed.replaceAll("\\s+", " ");
-                compressed = compressed.replaceAll(" \\{", "{");
-                compressed = compressed.replaceAll("\\{ ", "{");
-                compressed = compressed.replaceAll(" \\}", "}");
-                compressed = compressed.replaceAll("\\} ", "}");
-                compressed = compressed.replaceAll(" \\(", "(");
-                compressed = compressed.replaceAll("\\( ", "(");
-                compressed = compressed.replaceAll(" \\)", ")");
-                compressed = compressed.replaceAll("\\) ", ")");
-                compressed = compressed.replaceAll(" ;", ";");
-                compressed = compressed.replaceAll("; ", ";");
-                compressed = compressed.replaceAll(" ,", ",");
-                compressed = compressed.replaceAll(", ", ",");
-
-                // Restore string literals
-                compressed = restoreStringLiterals(compressed, stringLiterals);
+                // Add line breaks if requested, before comments are inserted so a
+                // preserved comment can never be split by one.
+                if (linebreakpos > 0) {
+                    compressed = addLineBreaks(compressed, generator.getSafeBreakOffsets(), linebreakpos);
+                }
 
                 // Insert preserved comments
                 compressed = commentPreserver.insertComments(compressed);
-
-                // Add line breaks if requested
-                if (linebreakpos > 0) {
-                    compressed = addLineBreaks(compressed, linebreakpos);
-                }
 
                 out.write(compressed);
 
@@ -335,89 +367,56 @@ public class JavaScriptCompressor {
         }
     }
 
-    private String addLineBreaks(String code, int linebreakpos) {
-        if (linebreakpos <= 0 || code.length() <= linebreakpos) {
+    /**
+     * Breaks {@code code} into lines no longer than {@code linebreakpos} where
+     * possible, inserting a newline only at one of {@code safeOffsets} - positions
+     * the generator recorded as falling between statements, never inside a
+     * string, template literal or regex literal. A statement longer than
+     * {@code linebreakpos} with no safe offset inside it is left on one line
+     * rather than cut at an arbitrary character position.
+     *
+     * @param code The generated JavaScript code
+     * @param safeOffsets Offsets into {@code code}, ascending, where a line break is safe
+     * @param linebreakpos Target maximum line length
+     * @return Code with line breaks inserted at safe offsets
+     */
+    private String addLineBreaks(String code, java.util.List<Integer> safeOffsets, int linebreakpos) {
+        if (linebreakpos <= 0 || code.length() <= linebreakpos
+                || safeOffsets == null || safeOffsets.isEmpty()) {
             return code;
         }
 
-        StringBuilder result = new StringBuilder();
-        int length = code.length();
-
-        for (int i = 0; i < length; i += linebreakpos) {
-            int end = Math.min(i + linebreakpos, length);
-            result.append(code, i, end);
-            if (end < length) {
-                result.append('\n');
-            }
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Extract string literals from the code and replace them with placeholders.
-     * This protects string contents from being modified by whitespace compression.
-     *
-     * @param code The JavaScript code
-     * @param stringLiterals List to store the extracted string literals
-     * @return Code with string literals replaced by placeholders
-     */
-    private String extractStringLiterals(String code, java.util.List<String> stringLiterals) {
-        StringBuilder result = new StringBuilder();
-        int length = code.length();
+        StringBuilder result = new StringBuilder(code.length() + code.length() / linebreakpos + 8);
+        int lineStart = 0;
         int i = 0;
+        int n = safeOffsets.size();
 
-        while (i < length) {
-            char c = code.charAt(i);
-
-            // Check for string literal (single or double quote)
-            if (c == '"' || c == '\'') {
-                char quoteChar = c;
-                StringBuilder literal = new StringBuilder();
-                literal.append(c);
-                i++;
-
-                // Find the end of the string literal, handling escapes
-                boolean escaped = false;
-                while (i < length) {
-                    char ch = code.charAt(i);
-                    literal.append(ch);
-
-                    if (escaped) {
-                        escaped = false;
-                    } else if (ch == '\\') {
-                        escaped = true;
-                    } else if (ch == quoteChar) {
-                        i++;
-                        break;
-                    }
+        while (i < n) {
+            int chosen = -1;
+            while (i < n) {
+                int offset = safeOffsets.get(i);
+                if (offset <= lineStart || offset >= code.length()) {
                     i++;
+                    continue;
                 }
-
-                // Store the literal and add a placeholder
-                stringLiterals.add(literal.toString());
-                result.append("___STRING_LITERAL_" + (stringLiterals.size() - 1) + "___");
-            } else {
-                result.append(c);
+                if (offset - lineStart > linebreakpos && chosen != -1) {
+                    // This offset would make the line too long and we already
+                    // have a shorter candidate; break there and reconsider this
+                    // offset for the next line.
+                    break;
+                }
+                chosen = offset;
                 i++;
             }
+            if (chosen == -1) {
+                break;
+            }
+            result.append(code, lineStart, chosen);
+            result.append('\n');
+            lineStart = chosen;
         }
 
+        result.append(code, lineStart, code.length());
         return result.toString();
-    }
-
-    /**
-     * Restore string literals that were replaced with placeholders.
-     *
-     * @param code Code with placeholders
-     * @param stringLiterals List of extracted string literals
-     * @return Code with string literals restored
-     */
-    private String restoreStringLiterals(String code, java.util.List<String> stringLiterals) {
-        String result = code;
-        for (int i = 0; i < stringLiterals.size(); i++) {
-            result = result.replace("___STRING_LITERAL_" + i + "___", stringLiterals.get(i));
-        }
-        return result;
     }
 }

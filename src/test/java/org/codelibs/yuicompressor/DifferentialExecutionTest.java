@@ -1,0 +1,218 @@
+package org.codelibs.yuicompressor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
+
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mozilla.javascript.ErrorReporter;
+import org.mozilla.javascript.EvaluatorException;
+
+import com.yahoo.platform.yui.compressor.JavaScriptCompressor;
+
+/**
+ * Runs each script under node twice - once as source, once compressed - and
+ * asserts the two produce the same output.
+ *
+ * <p>This is the assertion the suite was missing. {@code node --check} proves
+ * the output PARSES, never that it MEANS the same thing, and every
+ * silent-corruption defect found in this release produced output that parsed:
+ * "??" re-printing its operands un-munged so locals became globals, "?." being
+ * deleted so a safe undefined became a TypeError, "a + +b" merging into "a++b",
+ * default and rest parameters being dropped, "yield*" losing its star. A golden
+ * comparison would not have caught them either, because the entire fixture
+ * corpus is pre-ES6 and structurally cannot reach that syntax.
+ *
+ * <p>Comparing observable behaviour catches all of them without anyone having
+ * to anticipate which construct will break next, which is the property that
+ * makes it worth the node dependency. Each script must therefore be small,
+ * self-contained and deterministic, and must print its own result - including
+ * catching its own exceptions, so that "threw" is an observable outcome rather
+ * than a difference in a stack trace. jquery-1.6.4.js and friends cannot
+ * participate: they need a DOM.
+ *
+ * <p><b>What this class cannot detect, by construction.</b> It compares source
+ * behaviour against compressed behaviour, so a compressor that does nothing at
+ * all trivially agrees with itself. Proven by mutation rather than argued:
+ * making {@code compress} echo its input leaves this class green, and so does
+ * disabling munging entirely. It detects SEMANTIC CHANGE under compression and
+ * nothing else - never under-compression, never a dead munger, never a missed
+ * optimisation like the D1 double braces.
+ *
+ * <p>That is inherent to differential testing and is not a defect to be fixed
+ * here; contorting these cases into compression assertions would cost the
+ * property that makes them valuable. The other half of the net is what covers
+ * it: the golden fixtures ({@link JsGoldenFileTest}, {@link CssGoldenFileTest})
+ * pin exact bytes, {@link ParameterListTest} and {@link ModernJsTest} pin exact
+ * output, and disabling munging fails 25 of them across five classes. Neither
+ * half is "the safety net" on its own, and this class should not be described
+ * as one.
+ */
+class DifferentialExecutionTest {
+
+    private static final ErrorReporter SILENT = new ErrorReporter() {
+        public void warning(String m, String s, int l, String ls, int lo) {
+        }
+
+        public void error(String m, String s, int l, String ls, int lo) {
+        }
+
+        public EvaluatorException runtimeError(String m, String s, int l, String ls, int lo) {
+            return new EvaluatorException(m);
+        }
+    };
+
+    /**
+     * Skips one case when node is absent, rather than disabling the whole
+     * method with {@code @EnabledIf}. That reported "Tests run: 2, Skipped: 2"
+     * for 23 real executions, so a green build looked far better covered than
+     * it was; a per-case assumption makes the skipped count the real count.
+     * {@link NodeRuntime#isAvailable()} throws rather than returning false when
+     * node is present but broken.
+     */
+    private static void requireNode() {
+        Assumptions.assumeTrue(NodeRuntime.isAvailable(), "node is not on PATH; this execution did not run");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            // C1: "??" reached the toSource() fallback, which re-printed the
+            // subtree from the original source. The parameters were munged,
+            // their uses inside the operator were not, so both became globals.
+            "function f(alpha, beta) { return alpha ?? beta; }\n"
+                    + "console.log(f(null, 2), f(1, 2), f(undefined, 3));",
+            // The same fallback deleted "?." outright: source prints undefined,
+            // the old output threw a TypeError.
+            "var config = {};\n"
+                    + "var timeout = config.timeout ?? config.server?.timeout;\n"
+                    + "console.log('timeout =', timeout);",
+            // Optional-chain widening: with "a" non-null but "a.b" null,
+            // "a?.b.c" must still throw while "a?.b?.c" would swallow it. The
+            // difference is only observable at runtime.
+            "var a = { b: null };\n"
+                    + "try { console.log(a?.b.c); } catch (e) { console.log('threw', e.constructor.name); }",
+            // Logical assignment, all three: same fallback, same un-munging.
+            "function f(alpha, beta) { alpha ||= beta; return alpha; }\n"
+                    + "console.log(f(0, 7), f(5, 7));",
+            "function f(alpha, beta) { alpha &&= beta; return alpha; }\n"
+                    + "console.log(f(0, 7), f(5, 7));",
+            "function f(alpha, beta) { alpha ??= beta; return alpha; }\n"
+                    + "console.log(f(null, 7), f(5, 7));",
+            "function f(alpha, beta) { alpha **= beta; return alpha; }\n"
+                    + "console.log(f(2, 10));",
+            // Operator merges: "a+ +b" losing its space reads as "a++b", and
+            // "a- -b" as "a--b". Both change meaning or fail to parse.
+            "var a = 1, b = 2;\nconsole.log(a + +b, a - -b, a + + +b);",
+            // Default and rest parameters were dropped entirely, changing
+            // f() from 1 to undefined and f.length with it.
+            "function f(a=1){ return a; }\nconsole.log(f(), f(5), f.length);",
+            "function f(...args){ return args.length; }\nconsole.log(f(1,2,3), f(), f.length);",
+            "function f(a, ...rest){ return a + ':' + rest.join(','); }\nconsole.log(f(1,2,3));",
+            // A default that reads an earlier parameter: the expression is live
+            // code and its identifiers must be munged consistently with the
+            // declaration they refer to.
+            "function f(alpha, beta=alpha*2){ return beta; }\nconsole.log(f(3), f(3, 1));",
+            // "yield*" delegates; dropping the star yields the generator object
+            // once instead.
+            "function* inner(){ yield 1; yield 2; }\n"
+                    + "function* outer(){ yield* inner(); yield 3; }\n"
+                    + "var out = [], it = outer(), r = it.next();\n"
+                    + "while (!r.done) { out.push(r.value); r = it.next(); }\n"
+                    + "console.log(out.join(','));",
+            // Destructuring parameters, which must round-trip exactly.
+            "function f([a,b]){ return a+b; }\nconsole.log(f([1,2]));",
+            "function f({b}){ return b; }\nconsole.log(f({b: 7}));",
+            // Shorthand WITH a default. Rhino reports isShorthand() == false
+            // for this form, so the expansion above did not run and the same
+            // Name object served as key and binding - the key guard suppressed
+            // munging on the binding while body references were munged. All
+            // three positions, because the defect is in the shape, not the
+            // position. The assignment form is the silent one: it printed
+            // "undefined undefined" and passed node --check.
+            "function f(o) { var someKey; ({ someKey = 5 } = o); return someKey; }\n"
+                    + "console.log(f({}), f({someKey: 9}));",
+            "function f({ someKey = 5 }) { return someKey; }\nconsole.log(f({}), f({someKey: 9}));",
+            "function f(o) { var { someKey = 5 } = o; return someKey; }\n"
+                    + "console.log(f({}), f({someKey: 9}));",
+            // The neighbouring forms that were already correct, kept so a
+            // future change to the discriminator cannot quietly break them.
+            "function f({ k: someKey = 5 }) { return someKey; }\nconsole.log(f({}), f({k: 9}));",
+            "function f([ someKey = 5 ]) { return someKey; }\nconsole.log(f([]), f([9]));",
+            // Ordinary loop and labelled-continue behaviour. These two used to
+            // carry a comment calling them guards for the D1 double-brace
+            // change; they are not, and no test in this class could be.
+            // Reverting D1 leaves this class fully green, because "{{f();}}"
+            // and "{f();}" behave identically - the extra braces are a missed
+            // optimisation, not a semantic change, and this class only detects
+            // semantic change. What actually pins D1 is the exact-output tests
+            // in ModernJsTest (aBracedLoopBodyDoesNotGainASecondBracePair and
+            // its four siblings); reverting D1 fails eight of them. Measured,
+            // not assumed. Kept because loop and label semantics are worth
+            // running, under an honest description.
+            "var out = [];\nfor (var i=0;i<3;i++) { out.push(i); }\nconsole.log(out.join(','));",
+            "var out = [];\nouter: for (var i=0;i<3;i++) { for (var j=0;j<3;j++) { if (j===1) continue outer; out.push(i+'-'+j); } }\n"
+                    + "console.log(out.join(','));",
+            // Array elisions: a trailing hole is a slot, and dropping it
+            // changes both the contents and .length of the array.
+            "function f(alpha) { var beta = [, , alpha, , ]; return JSON.stringify(beta) + '|' + beta.length; }\n"
+                    + "console.log(f(7));",
+            "console.log(JSON.stringify([,]), [,].length, JSON.stringify([,,]), [,,].length);",
+            "console.log(JSON.stringify([1,2,]), [1,2,].length, JSON.stringify([1,,2]), [1,,2].length);",
+            // BigInt arithmetic, which is exactly what a normalised literal
+            // would get wrong.
+            "console.log((9007199254740993n + BigInt(1)).toString(), (0xffn * 2n).toString());",
+            // Generator object methods used to crash the compressor outright.
+            "var o = { *gen(){ yield 1; yield 2; } };\n"
+                    + "var out = [], it = o.gen(), r = it.next();\n"
+                    + "while (!r.done) { out.push(r.value); r = it.next(); }\n"
+                    + "console.log(out.join(','));",
+            // Shorthand properties are the identifier used as BOTH key and
+            // binding, in an object literal and in a destructuring pattern.
+            // Munging one renames the key with it.
+            "function f(){ var longLocalName = 7; return { longLocalName }; }\n"
+                    + "console.log(JSON.stringify(f()));",
+            "function f(){ var o = { b: 7 }; var { b } = o; return b; }\nconsole.log(f());",
+            // eval and with must keep seeing the locals they can name.
+            "function f(){ var secretName = 42; return eval('secretName'); }\nconsole.log(f());",
+            "function f(obj){ var x = 5; with (obj) { return x; } }\nconsole.log(f({}), f({x: 9}));" })
+    void compressedScriptBehavesLikeItsSource(String source) throws Exception {
+        requireNode();
+        assertSameBehaviour(source, compress(source, -1));
+    }
+
+    /**
+     * The same comparison at {@code --line-break 20}. A break landing inside a
+     * token is the C2 defect, and its identifier-splitting variant produces
+     * output that still parses - so only running it can tell the two apart.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = { "var out = [];\nvar q = 1 + + +function(){ out.push('abcdefghijklmnop'); }();\n"
+            + "console.log(out.join(','));",
+            "var out = [];\nvar q = 1 + + +function(){ var s = 'hello'; out.push(s); }();\n"
+                    + "console.log(out.join(','));",
+            "var alpha=1; var beta=2; var gamma=alpha+beta; console.log(alpha, beta, gamma);" })
+    void compressedScriptBehavesLikeItsSourceWithLineBreaks(String source) throws Exception {
+        requireNode();
+        assertSameBehaviour(source, compress(source, 20));
+    }
+
+    private void assertSameBehaviour(String source, String compressed) throws Exception {
+        String fromSource = NodeRuntime.run(source);
+        String fromCompressed = NodeRuntime.run(compressed);
+        assertEquals(fromSource, fromCompressed,
+                "compressed output does not behave like its source.\nsource:\n" + source + "\ncompressed:\n"
+                        + compressed);
+    }
+
+    private String compress(String source, int linebreakpos) throws IOException {
+        StringWriter out = new StringWriter();
+        new JavaScriptCompressor(new StringReader(source), SILENT)
+                .compress(out, linebreakpos, true, false, false, false);
+        return out.toString();
+    }
+
+}
