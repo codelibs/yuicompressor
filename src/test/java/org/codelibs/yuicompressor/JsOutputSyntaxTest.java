@@ -106,7 +106,10 @@ class JsOutputSyntaxTest {
     // immediately followed by a regex literal, with no separating space).
     // Two separate Criticals in this release were exactly that: comment
     // injection that node accepted as valid. The class of dangerous
-    // sequences is closed at four members, so it is closed for good here.
+    // sequences is closed at four members; this guards all four, everywhere
+    // the scanner can tell they are live code rather than string/template/
+    // regex content or an already-real comment (see CommentInjectionScanner's
+    // own javadoc for what "can tell" rests on, and its known limits).
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
     void compressedOutputHasNoCommentInjection(String fixture) throws Exception {
@@ -196,26 +199,88 @@ class JsOutputSyntaxTest {
         assertEquals(List.of(), new CommentInjectionScanner("`<!--not live-->`").scan());
     }
 
+    @Test
+    public void scannerCatchesHtmlCommentAfterDivisionFollowingEmptyBlock() {
+        // "{}"  is reachable as ordinary code, not just as an object literal:
+        // "var f = {} / a;" compresses to "var f={}/a;". A "/" following "}"
+        // must be treated as division, not as opening a regex - otherwise the
+        // scanner reads everything up to the next "/" as inert regex body and
+        // never checks it, silently swallowing whatever is in between.
+        assertEquals(1, new CommentInjectionScanner("f={}/a<!--INJECT-->b/c;").scan().size());
+    }
+
+    @Test
+    public void scannerAllowsRegexLiteralFollowingEmptyBlockStatement() {
+        // The competing, also-reachable case: "if(x){} /re/.test(y);"
+        // compresses to "if(x){{}}/re/.test(y);" - a genuine regex literal
+        // right after a block. Treating "}" as division-context must not
+        // turn this into a false positive: "re/.test(y);" scanned as
+        // ordinary code contains none of the four dangerous sequences.
+        assertEquals(List.of(), new CommentInjectionScanner("if(x){{}}/re/.test(y);").scan());
+    }
+
+    @Test
+    public void scannerCatchesHtmlCommentAfterDivisionFollowingPostfixIncrement() {
+        // Same shape as the "{}" case, found by the same audit: "var b = a++
+        // / 2;" compresses to "var b=a++/2;" - postfix "++"/"--" completes a
+        // value, so the following "/" is unambiguously division, never a
+        // regex start. Folding "++" into a plain "+" token (as any other
+        // compound operator ending in "+" would be) wrongly treats it as a
+        // regex precursor and swallows whatever follows as inert regex body.
+        assertEquals(1, new CommentInjectionScanner("b=a++/x<!--INJECT-->y/z;").scan().size());
+        assertEquals(1, new CommentInjectionScanner("b=a--/x<!--INJECT-->y/z;").scan().size());
+    }
+
+    @Test
+    public void scannerAllowsDivisionFollowingPostfixIncrement() {
+        assertEquals(List.of(), new CommentInjectionScanner("var b=a++/2;").scan());
+        assertEquals(List.of(), new CommentInjectionScanner("var b=a--/2;").scan());
+    }
+
     /**
      * Scans compressed JavaScript for the four comment-injection sequences,
      * everywhere they would actually be read as live code. Occurrences inside
      * string, template, and regex literals are inert text and are skipped, as
      * is the interior of a preserved "/*!" banner comment (already a real
-     * comment, so embedded text there is harmless). Distinguishing a regex
-     * literal from a division operator - the classic JS lexing ambiguity -
-     * uses the standard heuristic of looking at the preceding significant
-     * token; this is a pragmatic guard against a specific, narrow bug class,
-     * not a general-purpose lexer, so unusual token sequences (a contextual
-     * keyword used as a property name, for instance) are not guaranteed to be
-     * classified perfectly, though a misclassification here can only cause a
-     * missed regex boundary, not a missed injection: two real "/" characters
-     * end up adjacent only when they actually are, regardless of who owns
-     * them.
+     * comment, so embedded text there is harmless).
+     *
+     * <p>Distinguishing a regex literal from a division operator - the
+     * classic JS lexing ambiguity - uses the standard heuristic of looking at
+     * the preceding significant token, which is not a general-purpose lexer
+     * and is not guaranteed to classify every token sequence correctly. The
+     * two directions of mistake are NOT equally safe. Misclassifying an
+     * actual regex precursor as division-context only means a real regex
+     * literal's content gets scanned as ordinary code instead of skipped
+     * whole - at worst a false positive, e.g. if that content happened to
+     * contain "//" inside a "[...]" character class, which is a one-time
+     * investigation. Misclassifying actual division as a regex precursor is
+     * the dangerous direction: {@link #skipRegex} then treats everything up
+     * to the next unescaped "/" as inert regex body without scanning it at
+     * all, so any of the four sequences hiding in that span is a genuine
+     * false negative, not merely a missed boundary. REGEX_PRECURSORS is
+     * curated to avoid the dangerous direction wherever a token that
+     * completes a value (rather than awaiting an operand) was found reachable
+     * immediately before "/" in real generator output - "}" (e.g.
+     * "var f = {} / a;") and postfix "++"/"--" (e.g. "var b = a++ / 2;") are
+     * the two found so far, each confirmed reachable and each with its own
+     * regression test. This is a curated allowlist, not a derivation from the
+     * grammar, so it is not a proof that no third case exists.
      */
     private static final class CommentInjectionScanner {
 
+        // "}" is deliberately absent: unlike "(" or "{", it is reachable right
+        // before a genuine division ("var f = {} / a;" compresses to
+        // "var f={}/a;"), and skipRegex() cannot tell that apart from a block
+        // statement followed by a regex literal. Misclassifying "}" as a
+        // regex precursor would make skipRegex() swallow whatever follows the
+        // division as inert "regex body" up to the next "/", including any
+        // of the four dangerous sequences hiding in it - a missed injection,
+        // not just a missed regex boundary. Treating it as division-context
+        // instead only costs the rarer case (a regex literal actually
+        // following a block statement) being scanned as ordinary code, which
+        // is safe: it just means that regex's own content is checked too.
         private static final Set<String> REGEX_PRECURSORS = Set.of("(", ",", "=", ":", "[", "!", "&", "|", "?", "{",
-                "}", ";", "+", "-", "*", "%", "<", ">", "^", "~", "return", "typeof", "instanceof", "in", "of", "new",
+                ";", "+", "-", "*", "%", "<", ">", "^", "~", "return", "typeof", "instanceof", "in", "of", "new",
                 "delete", "void", "throw", "yield", "case", "do", "else");
 
         private final String code;
@@ -322,6 +387,27 @@ class JsOutputSyntaxTest {
                     depth--;
                     lastToken = "}";
                     pos++;
+                    atLineStart = false;
+                    continue;
+                }
+
+                // "++"/"--" get their own two-character token, deliberately
+                // NOT added to REGEX_PRECURSORS. Every other compound operator
+                // this tokenizer folds into its last character ("===", "&&",
+                // "=>", ...) is still awaiting an operand afterward, so
+                // treating a following "/" as a regex start stays correct
+                // regardless of which one it was. Postfix "++"/"--" is the
+                // one exception: "a++/2" is reachable ("var b = a++ / 2;"
+                // compresses to it) and unambiguously division - postfix
+                // "++"/"--" completes a value, it can never itself be
+                // followed by the start of a new primary expression such as a
+                // regex literal in valid JS. Folding it into lastToken "+" or
+                // "-" like any other operator would wrongly mark the "/"
+                // after it as a regex precursor, the same false-negative
+                // shape as "}" above.
+                if ((c == '+' || c == '-') && pos + 1 < code.length() && code.charAt(pos + 1) == c) {
+                    lastToken = c == '+' ? "++" : "--";
+                    pos += 2;
                     atLineStart = false;
                     continue;
                 }
