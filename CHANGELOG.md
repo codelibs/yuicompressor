@@ -2,6 +2,60 @@
 
 All notable changes to YUI Compressor will be documented in this file.
 
+## [2.4.11-SNAPSHOT]
+
+This release fixes a set of correctness defects in both the CSS and JavaScript
+compressors, most of them capable of emitting invalid or behaviourally-changed
+output while exiting successfully. The public API of `JavaScriptCompressor`
+and `CssCompressor` (constructors and `compress` overloads) is unchanged.
+
+### Fixed (CSS)
+- At-rule preludes are no longer corrupted into function tokens: `@container <name> (...)`,
+  `@supports ... not (...)`, and `@scope ... to (...)` now keep the required space before `(`
+- Custom property values (`--foo: ...`) and `@property` descriptor values are now preserved
+  verbatim, including internal whitespace, instead of being reformatted like ordinary declarations
+- Empty `@layer` blocks (e.g. `@layer base, components, utilities;`) are no longer deleted; they
+  declare cascade order even with no rules inside
+- Modern at-rule, function, and pseudo-class names are now normalised to lowercase consistently
+
+### Fixed (JavaScript)
+- Optional chaining is preserved and no longer widened: `a?.b.c` now stays `a?.b.c` instead of
+  becoming `a?.b?.c`, which would silently turn a `TypeError` on a null `a` into a quiet `undefined`
+- Optional catch binding (`catch {}`) is no longer emitted as the invalid `catch()`
+- Template literal and regex literal contents are no longer rewritten, so internal whitespace
+  (including runs of spaces) round-trips unchanged
+- `--line-break` no longer splits identifiers across the break, which produced unparseable output
+- `yield*` no longer loses its delegation star (it previously fell back to `toSource()`, which drops it)
+- Labeled statements no longer crash the compressor with a `ClassCastException`
+- Fixed operator/operand token merging that produced invalid or behaviour-changing output:
+  `a + +b` no longer collapses into `a++b`, and `- -a` / `+ +c` no longer collapse into the
+  pre-decrement/pre-increment `--a` / `++c`, which would silently mutate the operand
+- Fixed comment injection in minified output: a `/` operator directly before a regex literal no
+  longer forms a `//` line comment that swallows the rest of the statement, and a `<` before `!--`
+  no longer forms the Annex B `<!--` comment opener, which (minified output being a single line)
+  swallowed the rest of the file
+- Locals visible to `eval` or `with` are no longer munged, restoring the safety the README promises
+  for those constructs (direct `eval` can read any local in its scope chain by name; `with` can
+  dynamically shadow one)
+
+### Improved
+- Function expressions passed as call arguments, object property values, and array elements now
+  get scopes and have their parameters munged, closing a gap in `ScopeBuilder`'s traversal;
+  jQuery 1.6.4 minified output went from 137,798 to 106,970 bytes
+
+### Changed (Build and tests)
+- Migrated the test suite from JUnit 4 to JUnit 5
+- The 66 golden fixture pairs (62 CSS, 4 JS) under `src/test/resources` are now actually executed
+  by `CssGoldenFileTest` and `JsGoldenFileTest`; they existed in the repository but had never been
+  run by any test. 3 remain quarantined in `KNOWN_FAILURES` with a documented, non-defect reason
+  each (`zeros.css`, `issue86.js`, `jquery-1.6.4.js`)
+- Added compressor option coverage, modern CSS/JS regression tests, and an output guard
+  (`JsOutputSyntaxTest`) that runs `node --check` against every compressed fixture plus a
+  comment-injection scanner
+- Test suite grew from 163 to 328 tests
+- Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
+  `ant.properties`) and Travis CI configuration (`.travis.yml`)
+
 ## [2.4.8]
 
 ### Fixed

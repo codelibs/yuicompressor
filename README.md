@@ -3,7 +3,7 @@ YUI Compressor - The Yahoo! JavaScript and CSS Compressor
 
 ![Java CI](https://github.com/codelibs/yuicompressor/workflows/Java%20CI%20with%20Maven/badge.svg)
 
-**Version**: 2.4.10-SNAPSHOT
+**Version**: 2.4.11-SNAPSHOT
 **Group ID**: org.codelibs
 **Java**: 11+
 
@@ -50,12 +50,12 @@ This project uses Maven for build management (requires Maven 3.8+ and Java 11+):
 mvn clean package
 ```
 
-The compiled JAR will be available at `target/yuicompressor-2.4.10-SNAPSHOT.jar`
+The compiled JAR will be available at `target/yuicompressor-2.4.11-SNAPSHOT.jar`
 
 To run the JAR:
 
 ```bash
-java -jar target/yuicompressor-2.4.10-SNAPSHOT.jar [options] [input file]
+java -jar target/yuicompressor-2.4.11-SNAPSHOT.jar [options] [input file]
 ```
 
 To install to local Maven repository:

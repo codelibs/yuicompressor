@@ -65,8 +65,8 @@
 ### Phase 1: 基盤整備 [優先度: 高]
 
 #### 1.1 パーサー設定の更新
-- [ ] `Context.VERSION_1_8` → `Context.VERSION_ES6` に変更
-- [ ] CompilerEnvironsの設定見直し
+- [x] `Context.VERSION_1_8` → `Context.VERSION_ES6` に変更（`JavaScriptCompressor.java`で設定済み。チェック漏れだっただけで、実装自体は本リリースより前に完了していた）
+- [x] CompilerEnvironsの設定見直し（`setRecordingComments(false)`, `setRecordingLocalJsDocComments(false)`, `setLanguageVersion(Context.VERSION_ES6)`, `setGenerateDebugInfo(false)`, `setErrorReporter(reporter)`を明示的に設定済み）
 
 #### 1.2 ES6予約語の追加
 ```java
@@ -401,7 +401,7 @@ public void testClass() {
 
 ## 完了基準
 
-1. [x] ES6構文をパースしてもエラーにならない
+1. [ ] ES6構文をパースしてもエラーにならない — **誤り。実測により訂正**: Rhinoは`class`宣言/式、`async`/`await`、`import`/`export`、動的`import()`、`new.target`、`const`を使った`for-of`をパースできない（構文エラーで例外を投げる）。これはRhino 1.9.1を含む複数バージョンで検証済みで、バージョンを上げても解決しない制約である。`var`/`let`を使った`for-of`はパース可能。
 2. [x] アロー関数の変数がmungingされる
 3. [x] `let`/`const`のブロックスコープが正しく処理される
 4. [ ] 既存のテストが全て通る（ネットワーク接続時に確認）
@@ -427,12 +427,12 @@ public void testClass() {
 ### Phase 3: MungedCodeGenerator拡張（制御構文） ✅
 - [x] if/else文
 - [x] for/while/do-whileループ
-- [x] for-in/for-ofループ
+- [x] for-in/for-ofループ — ただし部分的: `for-of`は`var`/`let`ではパースできるが、`const`ではパースできない（実測により訂正。上記「完了基準」項目1参照）
 - [x] switch/case/default文
 - [x] try/catch/finally文
 - [x] break/continue文
 - [x] throw文
-- [x] labeled文
+- [x] labeled文 — **本項目は記述当時は誤りだった**: labeled文は本リリース（タスク12b、コミット86326d4）で修正されるまで、`LabeledStatement.getType()`が`Token.LABEL`ではなく`Token.EXPR_VOID`を返すために誤ってキャストされ、`ClassCastException`でコンプレッサーがクラッシュしていた。true になったのはこのリリースから。
 - [x] with文
 
 ### Phase 4: ScopeBuilder拡張 ✅
