@@ -65,8 +65,11 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   stops only at `)`, whitespace, a quote or `(` - was read as the end of a rule and broke the line
   inside the URL, which is precisely what a url-token may not contain. The pass now steps over
   strings, `url()` tokens and comments with the same helpers `collectComments` uses, so the two
-  cannot drift apart again. Every failure mode of those helpers ends a region late, which here
-  only means a longer line
+  cannot drift apart again. On where those regions *end*, fuzzing 68,383 (source, width) pairs
+  against an independent §4.3 tokenizer found no case that ends one early — an unterminated
+  string, URL or comment runs to the end of input, which here only costs a longer line. That is
+  what was tested, not a property of the design, and it says nothing about where a region
+  *begins*: an escaped quote starts one that is not there, which is a known defect listed below
 - **White space inside a non-base64 `data:` URL is no longer deleted.** Preserving a `data:` URL
   stripped white space from the whole token, including the contents of its quoted string. For a
   base64 payload that is a convenience; for any other payload the data is literal, so it destroyed
@@ -202,14 +205,36 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
 
 Every entry below is one instance of a single defect class: **a pass that runs without knowing what
 region of the document it is in.** That class is what this release was about. Release 1 fixed every
-instance that its own changes touched and every instance that destroyed data; what remains is
-enumerated here rather than left unknown. Each has a regression test pinning its current behaviour,
-so none of them can drift or be half-fixed unnoticed.
+instance that its own changes touched, and every instance that both destroyed data and was
+reachable by ordinary authoring; what remains is enumerated here rather than left unknown. Each has
+a regression test pinning its current behaviour, so none of them can drift or be half-fixed
+unnoticed.
 
-They are not equally serious, and the difference is worth stating plainly. The first group rewrites
-or deletes content inside one declaration; the second only leaves a comment in the output. Neither
-group loses a rule, truncates the stylesheet, or changes the exit code - those failures existed and
-were fixed.
+They are not equally serious, and the difference is worth stating plainly, in three groups below.
+The first destroys author content and can cost a declaration; it is here on reachability and on the
+risk of a seventh behaviour change to this file, both argued in its entry, rather than because the
+damage is acceptable. The second rewrites content inside one declaration. The third only leaves a
+comment in the output. None of them loses a *rule* it was not asked about, truncates the stylesheet,
+or changes the exit code - those failures existed and are fixed.
+
+**Destroys data.** One entry, and it is the most serious thing on this list.
+
+- An **escaped quote in a selector or identifier** starts a string region that is not there. Every
+  region scan in the CSS compressor decides a string begins wherever it sees a quote, without
+  asking whether that quote is escaped, and `\"` is a valid identifier escape (§4.3.7). The phantom
+  region ends at the *opening* quote of the next real string, so the scan then runs inside it, with
+  two measured consequences on valid CSS at exit code 0: `--line-break` puts a newline inside a
+  string literal, which is a parse error, so that declaration is dropped; and comment collection
+  deletes a comment-looking span that is really string content — `content:"keep /* this */ text"`
+  becomes `content:"keep text"`. Pre-existing and unchanged by this release.
+  Deferred rather than fixed because the *harm* is hard to reach, not because it is small: it needs
+  a comment or a `}` inside a later string. The *trigger* is not rare — Tailwind's
+  `content-['x']` arbitrary values emit an escaped quote in the generated selector — but on that
+  shape the effect is only a span left unminified, plus a following `/*!` banner losing the space
+  after its `!`, which is the one part of this that is a regression from this release rather than
+  pre-existing. Three scans share the blindness and a backslash *pair* is not an escape, so a fix
+  has to count backslashes in three places; that is more behaviour change than this release should
+  carry after six corrections to the same file
 
 **Rewrites confined to one declaration.** Wrong output, not just unminified output.
 
@@ -288,7 +313,7 @@ bought, and it is the safe direction to fail in.
   quarantined from the golden comparison, which had left the only large real-world fixture with no
   byte-level guard at all: reverting the redundant-brace fix, worth 2,200 bytes on this file, left
   the golden test green
-- Test suite grew from 163 to 524 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
+- Test suite grew from 163 to 526 tests (3 skipped: the two `ES6SupportTest` cases Rhino cannot
   parse, plus the fixture whose source node rejects). Without node on `PATH`, 46 are skipped and
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,

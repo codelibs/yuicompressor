@@ -706,4 +706,81 @@ class ModernCssTest {
         assertEquals("a{background:url(/img/0px-spacer.png)}b{color:red}",
                 compress("a{background:url(/img/0px-spacer.png)}b{color:#ff0000}"));
     }
+
+    // ------------------------------------------------------------------
+    // KNOWN DEFECT, deferred to Release 2 by ruling R41. Unlike everything above it,
+    // this one DESTROYS DATA rather than leaking, and it is deferred on reachability
+    // and on the risk of a further behaviour change, not because the damage is small.
+    // Pre-existing: byte-identical at the release base 070bdd7.
+    //
+    // Every region scan in this file decides that a string starts wherever it sees a
+    // quote, without asking whether that quote is itself escaped - and "\"" is a valid
+    // identifier escape (CSS Syntax L3 4.3.7). The phantom region then ends at the
+    // OPENING quote of the next real string, leaving the scan running inside it.
+    //
+    // The trap for whoever fixes this: it is not one predicate in one place. Three
+    // scans share the blindness - collectComments, insertLineBreaks, and the
+    // string-preserving regex in compress - and a backslash PAIR before a quote is not
+    // an escape, so the check has to count backslashes rather than look at one
+    // character. The last two assertions in each test below pin exactly that.
+    // ------------------------------------------------------------------
+
+    @Test
+    void anEscapedQuoteInASelectorStartsAPhantomString_knownDefectR41() throws Exception {
+        // A. The line-break pass resumes inside c's string and breaks there. A raw
+        //    newline in a CSS string is a parse error, so c is dropped.
+        assertEquals("a\\\"b{color:red}\nc{content:\"XXXXXXXXXX}\nYYYYYYYYYY\"}",
+                compress("a\\\"b{color:red}\nc{content:\"XXXXXXXXXX}YYYYYYYYYY\"}", 10));
+
+        // B. Comment collection resumes inside c's string and deletes a comment-looking
+        //    span that is really string content. The author's text is gone.
+        assertEquals("a\\\"b{color:red}\nc{content:\"keep text\"}",
+                compress("a\\\"b{color:red}\nc{content:\"keep /* this */ text\"}"));
+
+        // Control: without the escaped quote both are correct, so the quote is the
+        // trigger rather than anything about c.
+        assertEquals("ab{color:red}c{content:\"keep /* this */ text\"}",
+                compress("ab{color:red}\nc{content:\"keep /* this */ text\"}"));
+
+        // Control: a backslash PAIR is not an escaped quote - there the quote really
+        // does open a string - so "previous character is a backslash" is the wrong fix.
+        assertEquals("a\\\\\"b\"{color:red}c{content:\"keep /* this */ text\"}",
+                compress("a\\\\\"b\"{color:red}\nc{content:\"keep /* this */ text\"}"));
+    }
+
+    @Test
+    void aTailwindArbitraryValueSelectorReachesTheSameBlindness_knownDefectR41() throws Exception {
+        // The trigger is NOT confined to contrived selectors. Tailwind's arbitrary
+        // value syntax - content-['x'] and the like - emits an escaped quote in the
+        // generated selector, so this shape occurs in real, machine-generated CSS.
+        //
+        // What lands there is a missed optimisation rather than destruction: the
+        // phantom string runs from the selector's escaped quote to the opening quote
+        // of --tw-content's value, and that whole span is preserved verbatim, so its
+        // whitespace is never collapsed. Note "::before { --tw-content: " keeps its
+        // spaces below while the control does not. The destroying variants above need
+        // a comment or a "}" inside a later real string, which this shape lacks - the
+        // reachable trigger and the reachable harm are not the same thing, and that
+        // distinction is what R41 turns on.
+        assertEquals(".before\\:content-\\[\\'x\\'\\]::before { --tw-content: 'x';content:var(--tw-content)}"
+                + ".b::after{content:\"0px and #ff0000\"}.mt-4{margin-top:1rem}",
+                compress(".before\\:content-\\[\\'x\\'\\]::before { --tw-content: 'x'; content: var(--tw-content) }\n"
+                        + ".b::after { content: \"0px and #ff0000\" }\n.mt-4 { margin-top: 1rem }"));
+
+        // Control: the same rule with an ordinary selector minifies fully.
+        assertEquals(".plain::before{--tw-content:'x';content:var(--tw-content)}"
+                + ".b::after{content:\"0px and #ff0000\"}.mt-4{margin-top:1rem}",
+                compress(".plain::before { --tw-content: 'x'; content: var(--tw-content) }\n"
+                        + ".b::after { content: \"0px and #ff0000\" }\n.mt-4 { margin-top: 1rem }"));
+
+        // One consequence IS a regression from this release rather than pre-existing:
+        // a following "/*!" banner is no longer collected as a comment, so its text is
+        // exposed to the minifier and loses the space after "!". At 070bdd7 the
+        // context-free scan collected it regardless of the phantom string, and the
+        // banner survived intact. Cosmetic, inside a comment, but it is author text.
+        assertEquals(".before\\:content-\\[\\'x\\'\\]::before { --tw-content: 'x';content:var(--tw-content)}"
+                + "/*!(c) Acme 2026 */.mt-4{margin-top:1rem}",
+                compress(".before\\:content-\\[\\'x\\'\\]::before { --tw-content: 'x'; content: var(--tw-content) }\n"
+                        + "/*! (c) Acme 2026 */\n.mt-4 { margin-top: 1rem }"));
+    }
 }

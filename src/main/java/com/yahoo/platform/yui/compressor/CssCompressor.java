@@ -568,7 +568,25 @@ public class CssCompressor {
         return out.toString();
     }
 
-    /** Index just past the closing quote, or the end of input if unterminated. */
+    /**
+     * Index just past the closing quote, or the end of input if unterminated.
+     *
+     * <p>It is the caller's job to decide that a string starts at {@code start}, and
+     * both callers get that wrong in one known way: neither checks whether the quote
+     * is itself escaped, and {@code \"} is a valid identifier escape (&sect;4.3.7).
+     * So {@code a\"b{...}} opens a region that does not exist, which then ends at the
+     * <em>opening</em> quote of the next real string and leaves the caller scanning
+     * inside it. Deferred by ruling R41 - pre-existing, and unchanged by this release
+     * - and pinned by {@code anEscapedQuoteInASelectorStartsAPhantomString_knownDefectR41}.
+     *
+     * <p>Anyone fixing that should know it is not one predicate in one place. The
+     * quote-based scans are {@link #collectComments}, {@link #insertLineBreaks} and
+     * the string-preserving regex in {@code compress}; all three share the blindness,
+     * and the third is what leaves a Tailwind {@code content-['x']} rule unminified.
+     * The escape can also be a backslash pair ({@code a\\"b}), where the quote really
+     * does open a string, so a fix has to count the backslashes rather than look at
+     * one character.
+     */
     private static int skipString(String css, int start) {
         char quote = css.charAt(start);
         int i = start + 1;
@@ -1210,10 +1228,28 @@ public class CssCompressor {
      * closed, silently suppressing every later break. That one predates both fixes.
      * </ul>
      *
-     * <p>Every failure mode of the three primitives ends a region <em>late</em>: an
-     * unterminated string, URL or comment runs to the end of the input. That is the
-     * safe direction here, and deliberately so - refusing to break only produces a
-     * long line, while breaking in the wrong place corrupts the output.
+     * <p>What is known about where these regions <em>end</em>: no input has been found
+     * that ends one early. An unterminated string, URL or comment runs to the end of
+     * the input, which is the safe direction here - refusing to break only produces a
+     * long line, while breaking in the wrong place corrupts the output. That is not a
+     * proof. It is the result of fuzzing 68,383 (source, width) pairs against an
+     * independent &sect;4.3 tokenizer stricter than this code, which found no early
+     * end; a stronger claim was written here once and a contrived case falsified it
+     * within the round, so it is stated as what was tested rather than as a property
+     * of the design.
+     *
+     * <p>Region <em>starts</em> are a separate question, and there the answer is
+     * known to be no. {@link #skipString} is entered at any quote without either
+     * caller asking whether that quote is itself escaped, and {@code \"} is a valid
+     * identifier escape (&sect;4.3.7). A selector such as {@code a\"b} therefore opens
+     * a region that is not there, which ends at the <em>opening</em> quote of the next
+     * real string and leaves the scan running inside it. Deferred by ruling R41 as
+     * pre-existing and hard to reach, not fixed, and pinned by
+     * {@code anEscapedQuoteInASelectorStartsAPhantomString_knownDefectR41}. Both
+     * consequences destroy data rather than leak: a newline lands inside a string
+     * literal here, and in {@link #collectComments} a comment-looking span inside a
+     * real string is collected and deleted. Anything that changes where a region
+     * begins has to answer to that test.
      *
      * <p>One thing is deliberately not shared. {@link #collectComments} throws on an
      * unterminated comment, because there a {@code /*} with no closing delimiter
