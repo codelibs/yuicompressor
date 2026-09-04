@@ -19,6 +19,37 @@ import java.util.*;
  */
 public class MungedCodeGenerator {
 
+    /**
+     * System property that turns the unhandled-node fallback into a hard
+     * failure. Set it (to any value) to make {@link #generate} throw
+     * {@link UnsupportedSyntaxException} instead of falling back to
+     * {@code toSource()}, which emits un-munged identifiers and drops "?.".
+     * Off by default so existing callers keep today's behaviour; the test
+     * suite runs the whole fixture corpus plus a modern-syntax table with it
+     * on, so a newly-unhandled node type breaks the build instead of
+     * silently corrupting output.
+     */
+    public static final String STRICT_PROPERTY = "yuicompressor.strict";
+
+    /**
+     * Thrown when the generator cannot faithfully reproduce a construct -
+     * either an unhandled node type under {@link #STRICT_PROPERTY}, or a
+     * parameter whose full syntax Rhino does not expose. Failing loudly is
+     * deliberate: the alternative is output that parses but means something
+     * different.
+     */
+    public static class UnsupportedSyntaxException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public UnsupportedSyntaxException(String message) {
+            super(message);
+        }
+    }
+
+    private static boolean isStrict() {
+        return System.getProperty(STRICT_PROPERTY) != null;
+    }
+
     private ScopeBuilder scopeBuilder;
     private boolean munge;
     private StringBuilder output;
@@ -160,6 +191,14 @@ public class MungedCodeGenerator {
             case Token.EMPTY:
                 // Empty statement, nothing to output
                 break;
+            case Token.DEBUGGER:
+                // Handled here rather than by the fallback: toSource() emits
+                // "debugger;\n", whose trailing newline breaks the "minified
+                // output is a single line" premise that insertSeparatorIfMerging's
+                // Annex B reasoning rests on, and whose ";" then gets a second one
+                // from needsSemicolon().
+                output.append("debugger");
+                break;
             // No "case Token.LABEL:" here: Label (the per-name marker inside a
             // LabeledStatement's label list) is the only AST node that actually
             // reports Token.LABEL, and it is never dispatched through
@@ -239,6 +278,24 @@ public class MungedCodeGenerator {
             case Token.ASSIGN_URSH:
                 visitInfixExpression((InfixExpression) node, ">>>=");
                 break;
+            case Token.ASSIGN_EXP:
+                visitInfixExpression((InfixExpression) node, "**=");
+                break;
+            // Logical assignment (ES2021). These MUST be visited rather than
+            // left to the toSource() fallback: toSource() re-prints the
+            // original source of the whole subtree, so every identifier in it
+            // keeps its pre-munge spelling while its declaration is munged,
+            // turning locals into globals silently. Rhino models all four as
+            // Assignment, which extends InfixExpression.
+            case Token.ASSIGN_LOGICAL_OR:
+                visitInfixExpression((InfixExpression) node, "||=");
+                break;
+            case Token.ASSIGN_LOGICAL_AND:
+                visitInfixExpression((InfixExpression) node, "&&=");
+                break;
+            case Token.ASSIGN_NULLISH:
+                visitInfixExpression((InfixExpression) node, "??=");
+                break;
 
             // Arithmetic operators
             case Token.ADD:
@@ -292,6 +349,13 @@ public class MungedCodeGenerator {
                 break;
             case Token.OR:
                 visitInfixExpression((InfixExpression) node, "||");
+                break;
+            case Token.NULLISH_COALESCING:
+                // "??" cannot be mixed with "||" / "&&" without parentheses;
+                // Rhino records those parentheses as ParenthesizedExpression
+                // (Token.LP) nodes, which visitParenthesizedExpression reprints,
+                // so routing "??" through the ordinary infix path preserves them.
+                visitInfixExpression((InfixExpression) node, "??");
                 break;
             case Token.NOT:
                 visitUnaryExpression((UnaryExpression) node, "!");
@@ -428,7 +492,24 @@ public class MungedCodeGenerator {
                 break;
 
             default:
-                // Fallback: use toSource() for unsupported nodes
+                // Fallback: use toSource() for unsupported nodes.
+                //
+                // This is not merely "unsupported nodes print oddly". toSource()
+                // re-prints the ORIGINAL source of the whole subtree, so every
+                // identifier inside keeps its pre-munge spelling while its
+                // declaration was munged - silently turning locals into globals -
+                // and it drops "?." entirely. Any node type that lands here is a
+                // latent silent-corruption bug, and upgrading Rhino (Release 2)
+                // makes more syntax parse, which routes MORE node types here.
+                //
+                // Strict mode turns that latent bug into a build break. It is off
+                // by default so existing callers keep today's behaviour.
+                if (isStrict()) {
+                    throw new UnsupportedSyntaxException(
+                        "no handler for node type " + type + " (" +
+                        Token.typeToName(type) + ", " + node.getClass().getName() +
+                        "); the toSource() fallback would emit un-munged identifiers");
+                }
                 if (System.getProperty("yuicompressor.debug") != null) {
                     System.err.println("Warning: Using toSource() for unsupported node type: " +
                         type + " (" + node.getClass().getSimpleName() + ")");

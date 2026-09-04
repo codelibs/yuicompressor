@@ -430,4 +430,74 @@ class ModernJsTest {
         assertEquals("function f(){var a=1;return a+1;}", result,
                 "code with no eval/with must still munge exactly as before: " + result);
     }
+
+    // "??", "??=", "||=", "&&=" and "**=" used to have no case in
+    // MungedCodeGenerator's switch, so they fell through to
+    // "default: output.append(node.toSource())". toSource() re-prints the
+    // ORIGINAL source of the whole subtree, so both operands kept their
+    // pre-munge spelling while their declarations were munged - the
+    // parameters became "b"/"a" and the body still read "alpha"/"beta",
+    // which are now globals. The output parses cleanly, so nothing in the
+    // suite caught it. Each test below asserts the munged names actually
+    // reach the operands.
+
+    @Test
+    void nullishCoalescingMungesItsOperands() throws Exception {
+        String result = compress("function f(alpha, beta) { var gamma = alpha ?? beta; return gamma; }");
+        assertEquals("function f(c,b){var a=c??b;return a;}", result,
+                "toSource() would re-emit 'alpha ?? beta', turning both locals into globals: " + result);
+    }
+
+    @Test
+    void logicalOrAssignmentMungesItsOperands() throws Exception {
+        String result = compress("function f(alpha, beta) { alpha ||= beta; return alpha; }");
+        assertEquals("function f(b,a){b||=a;return b;}", result, result);
+    }
+
+    @Test
+    void logicalAndAssignmentMungesItsOperands() throws Exception {
+        String result = compress("function f(alpha, beta) { alpha &&= beta; return alpha; }");
+        assertEquals("function f(b,a){b&&=a;return b;}", result, result);
+    }
+
+    @Test
+    void nullishAssignmentMungesItsOperands() throws Exception {
+        String result = compress("function f(alpha, beta) { alpha ??= beta; return alpha; }");
+        assertEquals("function f(b,a){b??=a;return b;}", result, result);
+    }
+
+    @Test
+    void exponentAssignmentMungesItsOperands() throws Exception {
+        // Not in the original triage of this defect, but the same shape:
+        // Token.ASSIGN_EXP had no case either, so "**=" leaked too.
+        String result = compress("function f(alpha, beta) { alpha **= beta; return alpha; }");
+        assertEquals("function f(b,a){b**=a;return b;}", result, result);
+    }
+
+    @Test
+    void nullishCoalescingKeepsAnOptionalChainInItsOperand() throws Exception {
+        // The end-to-end corruption: source evaluates to undefined, the old
+        // output threw a TypeError because toSource() dropped the "?.".
+        String result = compress("function f(config) { return config.timeout ?? config.server?.timeout; }");
+        assertEquals("function f(a){return a.timeout??a.server?.timeout;}", result,
+                "dropping '?.' turns a safe undefined into a TypeError: " + result);
+    }
+
+    @Test
+    void nullishCoalescingKeepsParenthesesAgainstLogicalOperators() throws Exception {
+        // "a ?? b || c" is a SyntaxError - mixing "??" with "||"/"&&"
+        // requires parentheses, so they must survive in both directions.
+        assertEquals("var v=(a??b)||c;", compressNoMunge("var v = (a ?? b) || c;"));
+        assertEquals("var v=a??(b||c);", compressNoMunge("var v = a ?? (b || c);"));
+    }
+
+    @Test
+    void debuggerStatementStaysOnOneLine() throws Exception {
+        // Token.DEBUGGER used to reach the toSource() fallback, which emits
+        // "debugger;\n" - an embedded newline in output the line-break and
+        // comment-injection machinery both assume is a single line - and then
+        // needsSemicolon() added a second ';'.
+        String result = compressNoMunge("debugger; f();");
+        assertEquals("debugger;f();", result, result);
+    }
 }
