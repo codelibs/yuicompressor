@@ -237,6 +237,76 @@ class JsOutputSyntaxTest {
         assertEquals(List.of(), new CommentInjectionScanner("var b=a--/2;").scan());
     }
 
+    @Test
+    public void scannerAllowsRegexLiteralFollowingPrefixIncrement() {
+        // Unlike postfix, prefix "++"/"--" immediately before a regex is
+        // real, reachable compressor output: "var a=1; ++/x/.test(a);"
+        // compresses to itself unchanged (confirmed against the actual
+        // compressor - neither node nor Rhino treats it as a syntax error;
+        // prefix "++" only requires a syntactic LeftHandSideExpression
+        // operand). Scanning "/x/.test(a)" as ordinary code here, rather than
+        // recognizing the real regex and skipping it whole, is on the safe
+        // side of the documented asymmetry - it costs nothing when, as here,
+        // that span holds none of the four dangerous sequences.
+        assertEquals(List.of(), new CommentInjectionScanner("var a=1;++/x/.test(a);").scan());
+    }
+
+    @Test
+    public void scannerCatchesHtmlCommentAfterDivisionFollowingIdentifierNamedOf() {
+        // "of" is a contextual keyword, not a reserved word - it is a
+        // perfectly ordinary identifier everywhere outside a for-of head, and
+        // JavaScriptCompressor's own munged-name pool already treats it that
+        // way (twos.remove("of") is filed under "ES6+ two-letter keywords",
+        // separate from the genuinely reserved "as"/"is"/"do"/"if"/"in"
+        // above it - it is excluded only so the pool never *hands out* "of"
+        // as a new munged name, not because using it as one is illegal).
+        // "var of = 4; var x = of / 2;" compresses to "var of=4;var x=of/2;"
+        // - same reachable shape as "}" and postfix "++"/"--".
+        assertEquals(1, new CommentInjectionScanner("x=of/y<!--INJECT-->z/w;").scan().size());
+    }
+
+    @Test
+    public void scannerAllowsDivisionAfterIdentifierNamedOf() {
+        assertEquals(List.of(), new CommentInjectionScanner("var of=4;var x=of/2;").scan());
+    }
+
+    @Test
+    public void scannerFlagsEscapedSlashInRegexAfterBlockAsAcceptedTradeoff() {
+        // NOT A BUG - an accepted, deliberate false positive, kept under test
+        // so a future contributor who sees it fire does not "fix" it by
+        // putting "}" back into REGEX_PRECURSORS and silently reopening the
+        // false NEGATIVE that scannerCatchesHtmlCommentAfterDivisionFollowingEmptyBlock
+        // guards against.
+        //
+        // "if (x) { y = 1; } /foo\/\//.test(z);" compresses to
+        // "if(x){{y=1;}}/foo\/\//.test(z);". With "}" excluded from
+        // REGEX_PRECURSORS, the "/" opening that regex is read as division,
+        // so the regex's own content - including its escaped "\/" pairs - is
+        // scanned as ordinary code instead of skipped whole. Walking
+        // "foo\/\//"  character by character, the second escaped slash's
+        // literal "/" ends up immediately before the regex's real closing
+        // "/", which the scanner reads as a live "//". A false positive costs
+        // one investigation (confirm the flagged offset sits inside a
+        // genuine regex, as it does here); a false negative in this
+        // direction ships a Critical. Special-casing escaped slashes inside
+        // an accidentally-scanned regex would remove this trade, but adds
+        // real scanner complexity for a test-only guard - rejected in favor
+        // of documenting and testing the trade explicitly.
+        assertEquals(1, new CommentInjectionScanner("if(x){{y=1;}}/foo\\/\\//.test(z);").scan().size());
+    }
+
+    @Test
+    public void scannerAllowsRegexLiteralAfterForOf() {
+        // The competing, syntactically legitimate case ("for (x of /re/)") -
+        // not observed merged in real generator output (it always keeps a
+        // space: "for(var x of /re/g.exec(s)){...}"), but kept as a
+        // regression guard against a future generator change producing the
+        // merged form. Treating "of" as division-context must not turn this
+        // into a false positive: scanned as ordinary code, "re/g.exec(s))"
+        // contains none of the four dangerous sequences.
+        assertEquals(List.of(), new CommentInjectionScanner("for(x of/re/g.exec(s)){}").scan());
+    }
+
     /**
      * Scans compressed JavaScript for the four comment-injection sequences,
      * everywhere they would actually be read as live code. Occurrences inside
@@ -261,27 +331,42 @@ class JsOutputSyntaxTest {
      * curated to avoid the dangerous direction wherever a token that
      * completes a value (rather than awaiting an operand) was found reachable
      * immediately before "/" in real generator output - "}" (e.g.
-     * "var f = {} / a;") and postfix "++"/"--" (e.g. "var b = a++ / 2;") are
-     * the two found so far, each confirmed reachable and each with its own
-     * regression test. This is a curated allowlist, not a derivation from the
-     * grammar, so it is not a proof that no third case exists.
+     * "var f = {} / a;"), postfix "++"/"--" (e.g. "var b = a++ / 2;"), and
+     * the contextual keyword "of" used as an ordinary identifier (e.g.
+     * "var of = 4; var x = of / 2;") are the three found so far, each
+     * confirmed reachable and each with its own regression test - plus one
+     * accepted, deliberate false positive on the "}" side (see
+     * {@link JsOutputSyntaxTest#scannerFlagsEscapedSlashInRegexAfterBlockAsAcceptedTradeoff}).
+     * This is a curated allowlist, not a derivation from the grammar, so it
+     * is not a proof that no further case exists.
      */
     private static final class CommentInjectionScanner {
 
-        // "}" is deliberately absent: unlike "(" or "{", it is reachable right
-        // before a genuine division ("var f = {} / a;" compresses to
-        // "var f={}/a;"), and skipRegex() cannot tell that apart from a block
-        // statement followed by a regex literal. Misclassifying "}" as a
-        // regex precursor would make skipRegex() swallow whatever follows the
-        // division as inert "regex body" up to the next "/", including any
-        // of the four dangerous sequences hiding in it - a missed injection,
-        // not just a missed regex boundary. Treating it as division-context
-        // instead only costs the rarer case (a regex literal actually
-        // following a block statement) being scanned as ordinary code, which
-        // is safe: it just means that regex's own content is checked too.
+        // "}" and "of" are deliberately absent, unlike every other entry
+        // here. Both are reachable immediately before a genuine division, not
+        // just before their "textbook" regex-precursor use (a block statement
+        // followed by a regex literal; a for-of loop's regex-valued
+        // iterable):
+        //   "var f = {} / a;"      -> "var f={}/a;"
+        //   "var of = 4; var x = of / 2;" -> "var of=4;var x=of/2;"
+        // "of" is only a contextual keyword - an ordinary identifier
+        // everywhere outside a for-of head - unlike the reserved words below
+        // it; JavaScriptCompressor's own munged-name pool already treats it
+        // that way (twos.remove("of"), filed separately as "ES6+ two-letter
+        // keywords" from the genuinely reserved words above it).
+        // skipRegex() cannot tell a real precursor use apart from one of
+        // these division uses, so misclassifying either as a regex precursor
+        // would make it swallow whatever follows the division as inert
+        // "regex body" up to the next "/", including any of the four
+        // dangerous sequences hiding in it - a missed injection, not just a
+        // missed regex boundary. Treating them as division-context instead
+        // only costs the rarer case (a regex literal actually following a
+        // block statement, or actually iterated by a for-of) being scanned as
+        // ordinary code, which is safe: it just means that regex's own
+        // content is checked too.
         private static final Set<String> REGEX_PRECURSORS = Set.of("(", ",", "=", ":", "[", "!", "&", "|", "?", "{",
-                ";", "+", "-", "*", "%", "<", ">", "^", "~", "return", "typeof", "instanceof", "in", "of", "new",
-                "delete", "void", "throw", "yield", "case", "do", "else");
+                ";", "+", "-", "*", "%", "<", ">", "^", "~", "return", "typeof", "instanceof", "in", "new", "delete",
+                "void", "throw", "yield", "case", "do", "else");
 
         private final String code;
         private final List<String> violations = new ArrayList<>();
@@ -405,6 +490,29 @@ class JsOutputSyntaxTest {
                 // "-" like any other operator would wrongly mark the "/"
                 // after it as a regex precursor, the same false-negative
                 // shape as "}" above.
+                //
+                // This branch does not distinguish postfix from prefix - both
+                // land on lastToken "++"/"--". That is fine, but NOT because
+                // prefix use cannot be followed by "/": it demonstrably can -
+                // "++/x/.test(a)" is neither a node --check syntax error nor
+                // one Rhino rejects (prefix "++" only requires a syntactic
+                // LeftHandSideExpression operand, e.g. a CallExpression,
+                // which a regex literal followed by a member/call
+                // unremarkably is; whether that expression is actually
+                // assignable is a separate, later check that this compressor
+                // reproduces rather than performs). It is real, reachable
+                // compressor output: "var a=1; ++/x/.test(a);" compresses
+                // to itself unchanged. Excluding "++"/"--" from
+                // REGEX_PRECURSORS is still correct for this case, for a
+                // different reason than the postfix one above: it puts the
+                // following "/" on the SAFE side of the asymmetry documented
+                // on this class - scanning "/x/.test(a)" as ordinary code
+                // instead of skipping it whole as a regex costs nothing here
+                // (that span holds none of the four dangerous sequences), and
+                // in general costs at most a false positive, never a missed
+                // injection. So the one-token lookback being unable to tell
+                // prefix from postfix here does not matter: both land on the
+                // direction of misclassification that is safe to make.
                 if ((c == '+' || c == '-') && pos + 1 < code.length() && code.charAt(pos + 1) == c) {
                     lastToken = c == '+' ? "++" : "--";
                     pos += 2;
@@ -433,7 +541,7 @@ class JsOutputSyntaxTest {
                 pos += code.charAt(pos) == '\\' ? 2 : 1;
             }
             pos = Math.min(pos + 1, code.length());
-            lastToken = " value";
+            lastToken = " value";
             atLineStart = false;
         }
 
@@ -459,7 +567,7 @@ class JsOutputSyntaxTest {
                 }
                 pos++;
             }
-            lastToken = " value";
+            lastToken = " value";
             atLineStart = false;
         }
 
@@ -489,7 +597,7 @@ class JsOutputSyntaxTest {
                 j++;
             }
             pos = j;
-            lastToken = " value";
+            lastToken = " value";
             atLineStart = false;
         }
     }
