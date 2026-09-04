@@ -1,76 +1,76 @@
 # YUICompressor ES6 Migration Plan
 
-## 概要
+## Overview
 
-このドキュメントは、YUICompressorをES6（ECMAScript 2015）およびそれ以降のJavaScript構文に対応させるための計画を記述する。
+This document describes the plan for making YUICompressor support ES6 (ECMAScript 2015) and later JavaScript syntax.
 
-## 現状分析
+## Current State
 
-### 使用技術
+### Technology in use
 - **JavaScript Parser**: Mozilla Rhino 1.8.0
-- **言語バージョン設定**: `Context.VERSION_1_8` (ES5.1相当)
+- **Language version setting**: `Context.VERSION_1_8` (equivalent to ES5.1)
 
-### 現在サポートされている構文
+### Currently supported syntax
 
-#### 完全サポート（明示的なコード生成）
-| 構文 | MungedCodeGeneratorでの処理 |
-|------|---------------------------|
-| `var` 宣言 | ✅ `visitVariableDeclaration` |
-| `let` 宣言 | ✅ `visitVariableDeclaration` |
-| `const` 宣言 | ✅ `visitVariableDeclaration` |
-| 関数宣言/式 | ✅ `visitFunction` |
-| 変数参照 | ✅ `visitName` |
-| return文 | ✅ `visitReturnStatement` |
-| ブロック `{}` | ✅ `visitBlock` |
-| 数値リテラル | ✅ Number直接出力 |
-| 文字列リテラル | ✅ `visitStringLiteral` |
-| 代入 `=` | ✅ `visitInfixExpression` |
-| 算術演算子 `+ - * /` | ✅ `visitInfixExpression` |
-| 関数呼び出し | ✅ `visitFunctionCall` |
-| プロパティアクセス `.` | ✅ `visitPropertyGet` |
-| オブジェクトリテラル | ✅ `visitObjectLiteral` |
-| 配列リテラル | ✅ `visitArrayLiteral` |
+#### Fully supported (explicit code generation)
+| Syntax | Handling in MungedCodeGenerator |
+|--------|---------------------------------|
+| `var` declaration | ✅ `visitVariableDeclaration` |
+| `let` declaration | ✅ `visitVariableDeclaration` |
+| `const` declaration | ✅ `visitVariableDeclaration` |
+| Function declaration/expression | ✅ `visitFunction` |
+| Variable reference | ✅ `visitName` |
+| `return` statement | ✅ `visitReturnStatement` |
+| Block `{}` | ✅ `visitBlock` |
+| Numeric literal | ✅ Emitted directly as a Number |
+| String literal | ✅ `visitStringLiteral` |
+| Assignment `=` | ✅ `visitInfixExpression` |
+| Arithmetic operators `+ - * /` | ✅ `visitInfixExpression` |
+| Function call | ✅ `visitFunctionCall` |
+| Property access `.` | ✅ `visitPropertyGet` |
+| Object literal | ✅ `visitObjectLiteral` |
+| Array literal | ✅ `visitArrayLiteral` |
 
-#### パース可能だが最適化されない構文（`toSource()`フォールバック）
-- アロー関数 `() => {}`
-- テンプレートリテラル `` `hello ${name}` ``
-- クラス宣言/式
-- デストラクチャリング `const {a, b} = obj`
-- スプレッド演算子 `...arr`
-- 比較演算子 `== != === !== < > <= >=`
-- 論理演算子 `&& || !`
-- ビット演算子 `& | ^ ~ << >> >>>`
-- 三項演算子 `? :`
-- インクリメント/デクリメント `++ --`
-- if/else文
-- for/while/do-while ループ
-- for-of/for-in ループ
-- switch文
-- try/catch/finally
-- throw文
-- new演算子
-- this キーワード
-- async/await
-- ジェネレーター関数
+#### Parsed but not optimized (`toSource()` fallback)
+- Arrow functions `() => {}`
+- Template literals `` `hello ${name}` ``
+- Class declarations/expressions
+- Destructuring `const {a, b} = obj`
+- Spread operator `...arr`
+- Comparison operators `== != === !== < > <= >=`
+- Logical operators `&& || !`
+- Bitwise operators `& | ^ ~ << >> >>>`
+- Ternary operator `? :`
+- Increment/decrement `++ --`
+- `if`/`else` statements
+- `for`/`while`/`do-while` loops
+- `for-of`/`for-in` loops
+- `switch` statements
+- `try`/`catch`/`finally`
+- `throw` statements
+- `new` operator
+- `this` keyword
+- `async`/`await`
+- Generator functions
 
-### 現在の問題点
+### Current problems
 
-1. **言語バージョンが古い**: `VERSION_1_8`（ES5.1）に設定されている
-2. **多くのES6構文が`toSource()`フォールバック**: 変数のmungingが適用されない
-3. **ブロックスコープ未対応**: `let`/`const`のブロックスコープが正しく処理されない
-4. **ES6予約語が不足**: `let`, `const`, `await`, `yield`, `of` など
+1. **The language version is outdated**: it is set to `VERSION_1_8` (ES5.1)
+2. **Much ES6 syntax falls back to `toSource()`**: variable munging is not applied
+3. **No block scoping**: the block scope of `let`/`const` is not handled correctly
+4. **ES6 reserved words are missing**: `let`, `const`, `await`, `yield`, `of`, and others
 
-## 対応計画
+## Migration plan
 
-### Phase 1: 基盤整備 [優先度: 高]
+### Phase 1: Foundations [Priority: High]
 
-#### 1.1 パーサー設定の更新
-- [x] `Context.VERSION_1_8` → `Context.VERSION_ES6` に変更（`JavaScriptCompressor.java`で設定済み。チェック漏れだっただけで、実装自体は本リリースより前に完了していた）
-- [x] CompilerEnvironsの設定見直し（`setRecordingComments(false)`, `setRecordingLocalJsDocComments(false)`, `setLanguageVersion(Context.VERSION_ES6)`, `setGenerateDebugInfo(false)`, `setErrorReporter(reporter)`を明示的に設定済み）
+#### 1.1 Update the parser configuration
+- [x] Change `Context.VERSION_1_8` to `Context.VERSION_ES6` (already set in `JavaScriptCompressor.java`; this was merely an unchecked item — the implementation itself was completed before this release)
+- [x] Review the CompilerEnvirons configuration (`setRecordingComments(false)`, `setRecordingLocalJsDocComments(false)`, `setLanguageVersion(Context.VERSION_ES6)`, `setGenerateDebugInfo(false)`, and `setErrorReporter(reporter)` are now set explicitly)
 
-#### 1.2 ES6予約語の追加
+#### 1.2 Add ES6 reserved words
 ```java
-// JavaScriptCompressor.java の reserved セットに追加
+// Add to the "reserved" set in JavaScriptCompressor.java
 reserved.add("let");
 reserved.add("const");
 reserved.add("await");
@@ -82,7 +82,7 @@ reserved.add("get");
 reserved.add("set");
 ```
 
-#### 1.3 2文字/3文字の予約語リストからの除外
+#### 1.3 Exclude them from the two-/three-character name lists
 ```java
 twos.remove("of");
 threes.remove("let");
@@ -92,9 +92,9 @@ threes.remove("set");
 
 ---
 
-### Phase 2: MungedCodeGeneratorの拡張（基本ES6構文） [優先度: 高]
+### Phase 2: Extend MungedCodeGenerator (basic ES6 syntax) [Priority: High]
 
-#### 2.1 アロー関数のサポート
+#### 2.1 Arrow function support
 ```java
 case Token.ARROW:
     visitArrowFunction((ArrowFunctionNode) node);
@@ -123,7 +123,7 @@ private void visitArrowFunction(ArrowFunctionNode arrow) {
 }
 ```
 
-#### 2.2 テンプレートリテラルのサポート
+#### 2.2 Template literal support
 ```java
 case Token.TEMPLATE_LITERAL:
     visitTemplateLiteral((TemplateLiteral) node);
@@ -145,9 +145,9 @@ private void visitTemplateLiteral(TemplateLiteral template) {
 }
 ```
 
-#### 2.3 その他の演算子の追加
+#### 2.3 Add the remaining operators
 ```java
-// 比較演算子
+// Comparison operators
 case Token.EQ: visitInfixExpression(node, "=="); break;
 case Token.NE: visitInfixExpression(node, "!="); break;
 case Token.SHEQ: visitInfixExpression(node, "==="); break;
@@ -157,12 +157,12 @@ case Token.LE: visitInfixExpression(node, "<="); break;
 case Token.GT: visitInfixExpression(node, ">"); break;
 case Token.GE: visitInfixExpression(node, ">="); break;
 
-// 論理演算子
+// Logical operators
 case Token.AND: visitInfixExpression(node, "&&"); break;
 case Token.OR: visitInfixExpression(node, "||"); break;
 case Token.NOT: visitUnaryExpression(node, "!"); break;
 
-// ビット演算子
+// Bitwise operators
 case Token.BITAND: visitInfixExpression(node, "&"); break;
 case Token.BITOR: visitInfixExpression(node, "|"); break;
 case Token.BITXOR: visitInfixExpression(node, "^"); break;
@@ -171,18 +171,18 @@ case Token.LSH: visitInfixExpression(node, "<<"); break;
 case Token.RSH: visitInfixExpression(node, ">>"); break;
 case Token.URSH: visitInfixExpression(node, ">>>"); break;
 
-// その他の演算子
+// Other operators
 case Token.MOD: visitInfixExpression(node, "%"); break;
 case Token.COMMA: visitInfixExpression(node, ","); break;
 ```
 
 ---
 
-### Phase 3: MungedCodeGeneratorの拡張（制御構文） [優先度: 中]
+### Phase 3: Extend MungedCodeGenerator (control flow) [Priority: Medium]
 
-#### 3.1 制御構文の追加
+#### 3.1 Add control flow statements
 ```java
-// if文
+// if statement
 case Token.IF:
     visitIfStatement((IfStatement) node);
     break;
@@ -200,41 +200,41 @@ private void visitIfStatement(IfStatement ifStmt) {
     }
 }
 
-// forループ
+// for loop
 case Token.FOR:
     visitForLoop((ForLoop) node);
     break;
 
-// whileループ
+// while loop
 case Token.WHILE:
     visitWhileLoop((WhileLoop) node);
     break;
 
-// do-while ループ
+// do-while loop
 case Token.DO:
     visitDoLoop((DoLoop) node);
     break;
 
-// switch文
+// switch statement
 case Token.SWITCH:
     visitSwitchStatement((SwitchStatement) node);
     break;
 ```
 
-#### 3.2 その他の構文
+#### 3.2 Remaining syntax
 ```java
-// 三項演算子
+// Ternary operator
 case Token.HOOK:
     visitConditionalExpression((ConditionalExpression) node);
     break;
 
-// インクリメント/デクリメント
+// Increment/decrement
 case Token.INC:
 case Token.DEC:
     visitUpdateExpression((UpdateExpression) node);
     break;
 
-// throw文
+// throw statement
 case Token.THROW:
     visitThrowStatement((ThrowStatement) node);
     break;
@@ -244,7 +244,7 @@ case Token.TRY:
     visitTryStatement((TryStatement) node);
     break;
 
-// new演算子
+// new operator
 case Token.NEW:
     visitNewExpression((NewExpression) node);
     break;
@@ -257,14 +257,14 @@ case Token.THIS:
 
 ---
 
-### Phase 4: ScopeBuilderのブロックスコープ対応 [優先度: 中]
+### Phase 4: Block scope support in ScopeBuilder [Priority: Medium]
 
-#### 4.1 ブロックスコープの追跡
+#### 4.1 Track block scopes
 ```java
-// Block内のlet/constを適切なスコープで管理
+// Manage let/const inside a Block in the appropriate scope
 if (node instanceof Block) {
     Block block = (Block) node;
-    // ブロック内のlet/constはブロックスコープに
+    // let/const inside a block belong to the block scope
     ScriptOrFnScope blockScope = new ScriptOrFnScope(braceNesting + 1, currentScope);
     blockScope.setBlockScope(true);
     scopeMap.put(block, blockScope);
@@ -272,15 +272,15 @@ if (node instanceof Block) {
 }
 ```
 
-#### 4.2 アロー関数のスコープ
+#### 4.2 Arrow function scopes
 ```java
-// アロー関数は独自のスコープを持つ（thisは継承）
+// An arrow function has its own scope (but inherits `this`)
 if (node instanceof ArrowFunctionNode) {
     ArrowFunctionNode arrow = (ArrowFunctionNode) node;
     ScriptOrFnScope arrowScope = new ScriptOrFnScope(braceNesting + 1, currentScope);
     arrowScope.setArrowFunction(true);
     scopeMap.put(arrow, arrowScope);
-    // パラメータを登録
+    // Register the parameters
     for (AstNode param : arrow.getParams()) {
         if (param instanceof Name) {
             arrowScope.declareIdentifier(((Name) param).getIdentifier());
@@ -291,9 +291,9 @@ if (node instanceof ArrowFunctionNode) {
 
 ---
 
-### Phase 5: 高度なES6機能 [優先度: 中]
+### Phase 5: Advanced ES6 features [Priority: Medium]
 
-#### 5.1 クラス宣言/式
+#### 5.1 Class declarations/expressions
 ```java
 case Token.CLASS:
     visitClassNode(node);
@@ -304,18 +304,18 @@ private void visitClassNode(AstNode node) {
 }
 ```
 
-#### 5.2 デストラクチャリング
+#### 5.2 Destructuring
 ```java
-// 配列デストラクチャリング
+// Array destructuring
 case Token.ARRAY_COMP:  // or specific destructuring token
     visitArrayDestructuring(node);
     break;
 
-// オブジェクトデストラクチャリング
-// ObjectLiteralとしてパースされるため、コンテキストで判断
+// Object destructuring
+// Parsed as an ObjectLiteral, so it must be identified from the context
 ```
 
-#### 5.3 スプレッド/レスト演算子
+#### 5.3 Spread/rest operator
 ```java
 case Token.SPREAD:
     visitSpreadExpression(node);
@@ -324,49 +324,49 @@ case Token.SPREAD:
 
 ---
 
-### Phase 6: モジュール構文（将来対応） [優先度: 低]
+### Phase 6: Module syntax (future work) [Priority: Low]
 
-- import/export 構文
-- dynamic import `import()`
-- export default
-
----
-
-## 実装優先順位
-
-### 高優先度（まず対応）
-1. パーサー設定の更新（VERSION_ES6）
-2. ES6予約語の追加
-3. アロー関数のコード生成
-4. 比較/論理/ビット演算子の追加
-5. 制御構文（if/for/while）の追加
-
-### 中優先度（次に対応）
-6. テンプレートリテラルのコード生成
-7. ブロックスコープの正確な処理
-8. クラス宣言のコード生成
-9. デストラクチャリングの処理
-
-### 低優先度（将来対応）
-10. async/await
-11. ジェネレーター
-12. モジュール構文
+- `import`/`export` syntax
+- Dynamic `import()`
+- `export default`
 
 ---
 
-## テスト計画
+## Implementation priorities
 
-### 新規テストケース
+### High priority (do first)
+1. Update the parser configuration (`VERSION_ES6`)
+2. Add the ES6 reserved words
+3. Code generation for arrow functions
+4. Add the comparison/logical/bitwise operators
+5. Add control flow statements (`if`/`for`/`while`)
+
+### Medium priority (do next)
+6. Code generation for template literals
+7. Correct handling of block scopes
+8. Code generation for class declarations
+9. Handling of destructuring
+
+### Low priority (future work)
+10. `async`/`await`
+11. Generators
+12. Module syntax
+
+---
+
+## Test plan
+
+### New test cases
 ```java
 @Test
 public void testArrowFunction() {
-    // 基本アロー関数
+    // Basic arrow function
     assertCompression("const f=x=>x*2;", "const f=x=>x*2;");
 
-    // 複数パラメータ
+    // Multiple parameters
     assertCompression("const f=(x,y)=>x+y;", "const f=(a,b)=>a+b;");
 
-    // ブロックボディ
+    // Block body
     assertCompression("const f=x=>{return x*2;};", "const f=a=>{return a*2;};");
 }
 
@@ -386,61 +386,61 @@ public void testClass() {
 
 ---
 
-## リスクと軽減策
+## Risks and mitigations
 
-### リスク1: Rhino 1.8.0のES6サポートの限界
-- **軽減策**: `toSource()`フォールバックを維持し、正確性を優先
+### Risk 1: The limits of ES6 support in Rhino 1.8.0
+- **Mitigation**: keep the `toSource()` fallback and prioritize correctness
 
-### リスク2: 後方互換性の破壊
-- **軽減策**: 既存テストを全て通すことを確認
+### Risk 2: Breaking backward compatibility
+- **Mitigation**: confirm that all existing tests still pass
 
-### リスク3: パフォーマンス低下
-- **軽減策**: 重要なノードタイプの明示的処理を優先
-
----
-
-## 完了基準
-
-1. [ ] ES6構文をパースしてもエラーにならない — **誤り。実測により訂正**: Rhinoは`class`宣言/式、`async`/`await`、`import`/`export`、動的`import()`、`new.target`、`const`を使った`for-of`をパースできない（構文エラーで例外を投げる）。これはRhino 1.9.1を含む複数バージョンで検証済みで、バージョンを上げても解決しない制約である。`var`/`let`を使った`for-of`はパース可能。
-2. [x] アロー関数の変数がmungingされる
-3. [x] `let`/`const`のブロックスコープが正しく処理される
-4. [ ] 既存のテストが全て通る（ネットワーク接続時に確認）
-5. [x] 新規ES6テストが追加され、通る
+### Risk 3: Performance regressions
+- **Mitigation**: prioritize explicit handling of the important node types
 
 ---
 
-## 実装完了項目（Phase 1-5）
+## Completion criteria
 
-### Phase 1: 基盤整備 ✅
-- [x] パーサー設定を`Context.VERSION_ES6`に更新
-- [x] ES6予約語を追加（`let`, `const`, `await`, `yield`, `of`, `async`, `from`, `get`, `set`, `target`, `meta`）
-- [x] 2文字/3文字の変数名リストからES6キーワードを除外
+1. [ ] ES6 syntax parses without errors — **Incorrect; corrected by measurement**: Rhino cannot parse `class` declarations/expressions, `async`/`await`, `import`/`export`, dynamic `import()`, `new.target`, or `for-of` with `const` (it throws on a syntax error). This was verified across several versions, including Rhino 1.9.1, and is a constraint that upgrading the version does not resolve. `for-of` with `var`/`let` does parse.
+2. [x] Variables in arrow functions are munged
+3. [x] The block scope of `let`/`const` is handled correctly
+4. [ ] All existing tests pass (to be confirmed with network connectivity)
+5. [x] New ES6 tests were added and pass
 
-### Phase 2: MungedCodeGenerator拡張（基本ES6構文） ✅
-- [x] アロー関数のサポート（`=>`構文を保持）
-- [x] テンプレートリテラルのサポート（バッククォートと`${}`補間）
-- [x] 比較演算子（`==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`）
-- [x] 論理演算子（`&&`, `||`, `!`）
-- [x] ビット演算子（`&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`）
-- [x] その他の演算子（`%`, `**`, `,`, `in`, `instanceof`）
+---
 
-### Phase 3: MungedCodeGenerator拡張（制御構文） ✅
-- [x] if/else文
-- [x] for/while/do-whileループ
-- [x] for-in/for-ofループ — ただし部分的: `for-of`は`var`/`let`ではパースできるが、`const`ではパースできない（実測により訂正。上記「完了基準」項目1参照）
-- [x] switch/case/default文
-- [x] try/catch/finally文
-- [x] break/continue文
-- [x] throw文
-- [x] labeled文 — **本項目は記述当時は誤りだった**: labeled文は本リリース（タスク12b、コミット86326d4）で修正されるまで、`LabeledStatement.getType()`が`Token.LABEL`ではなく`Token.EXPR_VOID`を返すために誤ってキャストされ、`ClassCastException`でコンプレッサーがクラッシュしていた。true になったのはこのリリースから。
-- [x] with文
+## Completed work (Phases 1-5)
 
-### Phase 4: ScopeBuilder拡張 ✅
-- [x] デストラクチャリングパターンからの変数抽出
-- [x] for-of/for-inループの変数スコープ
-- [x] catchブロックの変数スコープ
-- [x] オブジェクトプロパティキーの除外
+### Phase 1: Foundations ✅
+- [x] Updated the parser configuration to `Context.VERSION_ES6`
+- [x] Added the ES6 reserved words (`let`, `const`, `await`, `yield`, `of`, `async`, `from`, `get`, `set`, `target`, `meta`)
+- [x] Excluded the ES6 keywords from the two-/three-character variable name lists
 
-### Phase 5: テストケース追加 ✅
-- [x] ES6SupportTest.javaを新規作成
-- [x] 40+のES6機能テストケースを追加
+### Phase 2: MungedCodeGenerator extensions (basic ES6 syntax) ✅
+- [x] Arrow function support (the `=>` syntax is preserved)
+- [x] Template literal support (backticks and `${}` interpolation)
+- [x] Comparison operators (`==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`)
+- [x] Logical operators (`&&`, `||`, `!`)
+- [x] Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`)
+- [x] Other operators (`%`, `**`, `,`, `in`, `instanceof`)
+
+### Phase 3: MungedCodeGenerator extensions (control flow) ✅
+- [x] `if`/`else` statements
+- [x] `for`/`while`/`do-while` loops
+- [x] `for-in`/`for-of` loops — but only partially: `for-of` parses with `var`/`let`, not with `const` (corrected by measurement; see item 1 of "Completion criteria" above)
+- [x] `switch`/`case`/`default` statements
+- [x] `try`/`catch`/`finally` statements
+- [x] `break`/`continue` statements
+- [x] `throw` statements
+- [x] Labeled statements — **this item was incorrect when it was written**: until it was fixed in this release (task 12b, commit 86326d4), a labeled statement was cast incorrectly because `LabeledStatement.getType()` returns `Token.EXPR_VOID` rather than `Token.LABEL`, which crashed the compressor with a `ClassCastException`. It only became true as of this release.
+- [x] `with` statements
+
+### Phase 4: ScopeBuilder extensions ✅
+- [x] Extraction of variables from destructuring patterns
+- [x] Variable scoping for `for-of`/`for-in` loops
+- [x] Variable scoping for `catch` blocks
+- [x] Exclusion of object property keys
+
+### Phase 5: New test cases ✅
+- [x] Created ES6SupportTest.java
+- [x] Added 40+ test cases for ES6 features
