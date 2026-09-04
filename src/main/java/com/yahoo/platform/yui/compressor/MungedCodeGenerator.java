@@ -319,6 +319,30 @@ public class MungedCodeGenerator {
             case Token.GETELEM:
                 visitElementGet((ElementGet) node);
                 break;
+            case Token.QUESTION_DOT:
+                // Rhino keeps optional chaining as QUESTION_DOT on an ordinary
+                // PropertyGet / ElementGet node, and its own toSource() drops the
+                // "?.", so it has to be printed here rather than by the fallback.
+                if (node instanceof ElementGet) {
+                    ElementGet optionalElement = (ElementGet) node;
+                    visitNode(optionalElement.getTarget());
+                    output.append("?.[");
+                    visitNode(optionalElement.getElement());
+                    output.append("]");
+                } else if (node instanceof PropertyGet) {
+                    PropertyGet optionalProperty = (PropertyGet) node;
+                    visitNode(optionalProperty.getTarget());
+                    output.append("?.");
+                    AstNode property = optionalProperty.getProperty();
+                    if (property instanceof Name) {
+                        output.append(((Name) property).getIdentifier());
+                    } else {
+                        output.append(property.toSource());
+                    }
+                } else {
+                    output.append(node.toSource());
+                }
+                break;
 
             // ES6+ features
             case Token.ARROW:
@@ -687,12 +711,16 @@ public class MungedCodeGenerator {
         visitNode(tryStmt.getTryBlock());
 
         for (CatchClause clause : tryStmt.getCatchClauses()) {
-            output.append("catch(");
             Name varName = clause.getVarName();
             if (varName != null) {
+                output.append("catch(");
                 output.append(getMungedName(varName.getIdentifier(), clause));
+                output.append(")");
+            } else {
+                // Optional catch binding: "catch" with no parentheses. "catch()"
+                // is a syntax error.
+                output.append("catch");
             }
-            output.append(")");
             visitNode(clause.getBody());
         }
 
@@ -887,6 +915,9 @@ public class MungedCodeGenerator {
 
     private void visitFunctionCall(FunctionCall call) {
         visitNode(call.getTarget());
+        if (call.isOptionalCall()) {
+            output.append("?.");
+        }
         output.append("(");
 
         List<AstNode> args = call.getArguments();
@@ -976,6 +1007,14 @@ public class MungedCodeGenerator {
                     output.append(")");
                     visitNode(fn.getBody());
                 }
+            } else if (prop.isNormalMethod()) {
+                // ES6 shorthand method: keep "m(){...}" rather than "m:function(){...}"
+                visitNode(prop.getLeft());
+                FunctionNode method = (FunctionNode) prop.getRight();
+                output.append("(");
+                visitParameterList(method.getParams(), method);
+                output.append(")");
+                visitNode(method.getBody());
             } else {
                 // Regular property
                 AstNode key = prop.getLeft();
