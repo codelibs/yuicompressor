@@ -217,4 +217,57 @@ class ModernJsTest {
                         + "passes 'node --check' (the output still parses) while silently "
                         + "discarding the ternary: " + result);
     }
+
+    // A doubled unary minus/plus is a pure expression with no side effect.
+    // Collapsing the space turns it into a pre-decrement/pre-increment,
+    // which both changes the value AND writes to the operand - a silent
+    // behaviour change worse than a SyntaxError, since nothing signals it.
+
+    @Test
+    void doubleUnaryMinusStaysAPureExpressionRatherThanAPreDecrement() throws Exception {
+        String result = compressNoMunge("var a = 5; var r = - -a;");
+        assertEquals("var a=5;var r=- -a;", result,
+                "'--a' pre-decrements and mutates 'a'; '- -a' must not collapse into it: " + result);
+    }
+
+    @Test
+    void doubleUnaryPlusStaysAPureExpressionRatherThanAPreIncrement() throws Exception {
+        String result = compressNoMunge("var c = 5; var r = + +c;");
+        assertEquals("var c=5;var r=+ +c;", result,
+                "'++c' pre-increments and mutates 'c'; '+ +c' must not collapse into it: " + result);
+    }
+
+    @Test
+    void addOperatorDoesNotMergeWithPrefixIncrementOperand() throws Exception {
+        String result = compressNoMunge("var a = 1, b = 2; var r = a + ++b;");
+        assertEquals("var a=1,b=2;var r=a+ ++b;", result,
+                "'a+++b' reparses as '(a++) + b', incrementing the wrong variable "
+                        + "('a' instead of 'b') and changing the result: " + result);
+    }
+
+    @Test
+    void subOperatorDoesNotMergeWithPrefixDecrementOperand() throws Exception {
+        String result = compressNoMunge("var a = 1, b = 2; var r = a - --b;");
+        assertEquals("var a=1,b=2;var r=a- --b;", result,
+                "'a---b' reparses as '(a--) - b', decrementing the wrong variable "
+                        + "('a' instead of 'b') and changing the result: " + result);
+    }
+
+    @Test
+    void addAfterPostfixIncrementAndAddBeforePrefixIncrementStayDistinct() throws Exception {
+        // Both "a++ + b" and "a + ++b" naively render to the same raw text
+        // "a+++b" if no separator is ever inserted - and "a+++b" itself
+        // always reparses as "(a++) + b", so an unconditional collapse
+        // would silently make one of the two inputs wrong. After the fix
+        // they must render differently: the left-boundary case needs no
+        // separator (maximal-munch already resolves "a+++b" as intended for
+        // it), the right-boundary case does.
+        String postfixThenAdd = compressNoMunge("var a = 1, b = 2; var r = a++ + b;");
+        String addThenPrefix = compressNoMunge("var a = 1, b = 2; var r = a + ++b;");
+        assertEquals("var a=1,b=2;var r=a+++b;", postfixThenAdd, postfixThenAdd);
+        assertEquals("var a=1,b=2;var r=a+ ++b;", addThenPrefix, addThenPrefix);
+        assertFalse(postfixThenAdd.equals(addThenPrefix),
+                "'a++ + b' and 'a + ++b' have different meanings and must not collapse "
+                        + "to the same output: " + postfixThenAdd);
+    }
 }
