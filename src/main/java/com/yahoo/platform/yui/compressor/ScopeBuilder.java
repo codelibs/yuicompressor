@@ -157,6 +157,38 @@ public class ScopeBuilder {
             if (id != null) {
                 id.incrementRefcount();
             }
+
+            // A bare reference to "eval" - called directly ("eval(...)") or
+            // merely aliased ("var e = eval") - can run code with direct-eval
+            // access to every local in the enclosing scope chain at this
+            // point. Munging any of those locals would break a direct eval
+            // that looks one up by its original name (see the README's
+            // promise that "eval" stays safe, if not optimally compressed).
+            // A property access like "obj.eval" doesn't reach this branch
+            // (filtered out above), which is correct: invoking eval that way
+            // is an indirect eval, and indirect eval always runs in global
+            // scope, so it can't see these locals regardless.
+            if ("eval".equals(identifier)) {
+                preventMungingUpChain(currentScope);
+            }
+            return;
+        }
+
+        // Handle "with" statements. Identifier resolution inside the body
+        // can dynamically bind to a property of the with object instead of
+        // an enclosing variable of the same name. Renaming that variable
+        // would silently change which binding the runtime picks, so every
+        // scope visible from here - this one and each of its ancestors -
+        // is marked unsafe to munge (see the README's promise that "with"
+        // stays safe, if not optimally compressed). Functions declared
+        // inside the body still get their own scope munged normally: a
+        // function's own locals always shadow the with object within its
+        // own body, so renaming them is unaffected by the enclosing with.
+        if (node instanceof WithStatement) {
+            WithStatement withStmt = (WithStatement) node;
+            preventMungingUpChain(currentScope);
+            visitNode(withStmt.getExpression(), currentScope, braceNesting);
+            visitNode(withStmt.getStatement(), currentScope, braceNesting);
             return;
         }
 
@@ -267,6 +299,21 @@ public class ScopeBuilder {
             // Default value: const [a = 1] = arr
             Assignment assign = (Assignment) target;
             declareVariableIdentifiers(assign.getLeft(), scope);
+        }
+    }
+
+    /**
+     * Marks {@code scope} and every scope enclosing it as unsafe to munge.
+     * Used for "eval" and "with", both of which can bind to a local
+     * declared in any scope visible from the point of use, not just the
+     * innermost one. Walking all the way to the global scope is harmless:
+     * {@link ScriptOrFnScope#preventMunging()} is already a no-op there,
+     * since global symbols are never munged in the first place.
+     */
+    private void preventMungingUpChain(ScriptOrFnScope scope) {
+        while (scope != null) {
+            scope.preventMunging();
+            scope = scope.getParentScope();
         }
     }
 

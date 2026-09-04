@@ -348,4 +348,86 @@ class ModernJsTest {
         String result = compressNoMunge("outer: x();");
         assertEquals("outer:x();", result, result);
     }
+
+    // The README promises munging stays safe "even when using constructs
+    // such as 'eval' or 'with'". Direct eval can read any local visible in
+    // its enclosing scope chain by name; a with statement can dynamically
+    // shadow any of those same locals with a property of its object. Either
+    // way, renaming the local would silently change what the program does,
+    // so the scopes eval/with can see must be left unmunged.
+
+    @Test
+    void evalReadingALocalByNamePreventsThatLocalFromBeingMunged() throws Exception {
+        String result = compress("function f(){ var secretName = 42; return eval(\"secretName\"); }");
+        assertEquals("function f(){var secretName=42;return eval(\"secretName\");}", result,
+                "eval(\"secretName\") only works if 'secretName' keeps its name: " + result);
+    }
+
+    @Test
+    void evalInsideAFunctionExpressionArgumentPreventsMunging() throws Exception {
+        // A regression check: function expressions passed as call arguments
+        // only started getting scopes (and munged) once ScopeBuilder learned
+        // to reach them; before that this case was accidentally safe.
+        String result = compress("run(function(secretName){ return eval(\"secretName\"); });");
+        assertEquals("run(function(secretName){return eval(\"secretName\");});", result,
+                "the parameter read by eval() must not be renamed: " + result);
+    }
+
+    @Test
+    void evalInANestedFunctionProtectsEveryEnclosingScope() throws Exception {
+        // Direct eval sees the locals of every enclosing scope, not just the
+        // one it's written in - so a local two scopes up from the eval call
+        // must stay unmunged too.
+        String result = compress(
+                "function outer(){ var outerLocal = 7; function inner(){ return eval(\"outerLocal\"); } return inner(); }");
+        assertEquals(
+                "function outer(){var outerLocal=7;function inner(){return eval(\"outerLocal\");}return inner();}",
+                result, "eval() in inner() can still read outerLocal by name: " + result);
+    }
+
+    @Test
+    void aSiblingFunctionWithNoEvalStillMungesItsOwnLocals() throws Exception {
+        // Protecting the scopes eval/with can see must not cascade into
+        // unrelated functions declared alongside them: g() never calls
+        // eval and doesn't need protecting, only f() does.
+        String result = compress(
+                "function f(){ var a = 1; eval(\"a\"); function g(){ var longLocalName = 2; return longLocalName; } return g(); }");
+        assertEquals(
+                "function f(){var a=1;eval(\"a\");function g(){var b=2;return b;}return g();}",
+                result, "g() has no eval of its own, so its local must still be munged: " + result);
+    }
+
+    @Test
+    void evalAssignedToAVariableWithoutBeingCalledStillPreventsMunging() throws Exception {
+        // "var e = eval" is still a bare reference to the identifier eval,
+        // even though it's not invoked at this call site.
+        String result = compress("function f(){ var secretName = 9; var e = eval; return e(\"secretName\"); }");
+        assertEquals("function f(){var secretName=9;var e=eval;return e(\"secretName\");}", result,
+                "aliasing eval must still protect the local it might read: " + result);
+    }
+
+    @Test
+    void aPropertyAccessNamedEvalDoesNotPreventMunging() throws Exception {
+        // "window.eval(...)" is an indirect eval: it always runs in global
+        // scope and can never see this function's locals, so it is not the
+        // hazard a bare "eval" reference is and must not disable munging.
+        String result = compress("function f(){ var localOnly = 1; return window.eval(\"1+1\"); }");
+        assertEquals("function f(){var a=1;return window.eval(\"1+1\");}", result,
+                "window.eval is an indirect eval and cannot see localOnly: " + result);
+    }
+
+    @Test
+    void withStatementPreventsMungingOfLocalsItCanShadow() throws Exception {
+        String result = compress("function f(obj){ var x = 5; with (obj) { return x; } }");
+        assertEquals("function f(obj){var x=5;with(obj){return x;}}", result,
+                "renaming x would change which binding 'with' resolves to: " + result);
+    }
+
+    @Test
+    void ordinaryCodeWithNoEvalOrWithStillMungesNormally() throws Exception {
+        // Guards against the fix becoming a blanket munging disable.
+        String result = compress("function f(){ var longVariableName = 1; return longVariableName + 1; }");
+        assertEquals("function f(){var a=1;return a+1;}", result,
+                "code with no eval/with must still munge exactly as before: " + result);
+    }
 }

@@ -112,15 +112,17 @@ class ScriptOrFnScope {
 
     void munge() {
 
-        if (!markedForMunging) {
-            // Stop right here if this scope was flagged as unsafe for munging.
-            return;
-        }
+        // Do not munge symbols in the global scope! And if this scope was
+        // flagged as unsafe for munging (contains, or is enclosed by, an
+        // "eval" or "with"), leave its own identifiers alone too - but
+        // still fall through to the subScopes loop below. A scope that is
+        // unsafe does not make the functions declared inside it unsafe: a
+        // nested function's own locals are always shadowed within its own
+        // body (see ScopeBuilder's "with"/"eval" handling), so they may
+        // still be munged and must not be skipped along with this scope.
+        if (parentScope != null && markedForMunging) {
 
-        int pickFromSet = 1;
-
-        // Do not munge symbols in the global scope!
-        if (parentScope != null) {
+            int pickFromSet = 1;
 
             LinkedHashSet freeSymbols = new LinkedHashSet();
 
