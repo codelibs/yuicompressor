@@ -134,4 +134,21 @@ class ModernCssTest {
                     "no internal placeholder should ever leak into the output for input [" + input + "]: " + result);
         }
     }
+
+    @Test
+    void zeroTimeValuesKeepTheirUnit() throws Exception {
+        // CSS Values and Units Level 3 allows omitting the unit only for zero
+        // <length>. <time> has no such exemption, so "0s" must not become "0".
+        // zeros.css.min expects otherwise; that golden encodes invalid CSS and is
+        // deliberately left quarantined rather than matched.
+        String result = compress("a { transition-duration: 0s; transition-delay: 0ms; }");
+        assertTrue(result.contains("0s"), "a zero <time> must keep its unit: " + result);
+        assertTrue(result.contains("0ms"), "a zero <time> must keep its unit: " + result);
+    }
+
+    @Test
+    void zeroLengthValuesStillDropTheirUnit() throws Exception {
+        // The <length> exemption does apply, so this optimisation must be kept.
+        assertEquals("a{width:0;height:0}", compress("a { width: 0%; height: 0px; }"));
+    }
 }

@@ -28,8 +28,14 @@ class CssGoldenFileTest {
     private static final Path RESOURCES = Paths.get("src/test/resources");
 
     /**
-     * Fixtures whose current output does not match the golden file because of a
-     * real defect. Each entry must be removed by the task that fixes it.
+     * Fixtures whose golden file does not match current output.
+     *
+     * zeros.css is quarantined deliberately and permanently. Its golden expects
+     * "transition-delay:0" from "0.0ms", but CSS Values and Units Level 3 allows
+     * omitting the unit only for a zero <length>; <time> has no such exemption.
+     * Matching this golden would make the compressor emit invalid CSS, so the
+     * golden is kept as a record of upstream YUI's behaviour and is not matched.
+     * See ModernCssTest.zeroTimeValuesKeepTheirUnit.
      */
     private static final List<String> KNOWN_FAILURES = List.of("zeros.css");
 
