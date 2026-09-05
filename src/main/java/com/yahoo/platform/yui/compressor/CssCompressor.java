@@ -985,10 +985,28 @@ public class CssCompressor {
         css = css.replaceAll("\\s+", " ");
 
         // Remove the spaces before the things that should not have spaces before them.
-        // But, be careful not to turn "p :link {...}" into "p:link{...}"
+        // But, be careful not to turn "p :link {...}" into "p:link{...}" - those two
+        // select disjoint sets of elements.
         // Swap out any pseudo-class colons with the token, and then swap back.
+        //
+        // A selector starts at the beginning of the file, after a "}", after the "{"
+        // that opens a block, or after a ";". The last two used to be missing, so the
+        // first rule inside "@media", "@supports", "@layer" or "@container" - and,
+        // with CSS nesting, every nested rule, which is by definition the first thing
+        // after a "{" or a ";" - lost the space in front of its pseudo-class. A rule
+        // preceded by a sibling's "}" was protected, which is why the top-level
+        // golden fixtures never showed it.
+        //
+        // The anchor is a lookbehind rather than part of the match: an at-rule's own
+        // prelude ends with the very "{" that opens the block, and consuming it would
+        // leave the first nested rule with no anchor of its own.
+        //
+        // ";" and "}" are excluded from the run before the colon and from the run
+        // after it, so a match cannot start in a declaration block and reach into the
+        // next selector: that is what keeps a declaration's own colon ("color:red")
+        // out of the protection, where it would only cost bytes.
         sb = new StringBuffer();
-        p = Pattern.compile("(^|\\})((^|([^\\{:])+):)+([^\\{]*\\{)");
+        p = Pattern.compile("(?:^|(?<=[};{]))((^|([^\\{:;\\}])+):)+([^\\{;\\}]*\\{)");
         m = p.matcher(css);
         while (m.find()) {
             String s = m.group();
@@ -1203,11 +1221,18 @@ public class CssCompressor {
 
         // Shorten colors from rgb(51,102,153) to #336699
         // This makes it more likely that it'll get further compressed in the next step.
-        p = Pattern.compile("rgb\\s*\\(\\s*([0-9,\\s]+)\\s*\\)");
+        //
+        // Only the legacy comma-separated form is matched. The character class used
+        // to admit whitespace as well, so CSS Color 4's "rgb(0 0 0)" came through as
+        // the single token "0 0 0" and Integer.parseInt threw NumberFormatException
+        // out of compress() - an unchecked exception the signature does not declare,
+        // which aborts a build over input every browser accepts. The modern form is
+        // left alone: not shortening it costs bytes, not correctness.
+        p = Pattern.compile("rgb\\s*\\(\\s*(\\d{1,9}\\s*,\\s*\\d{1,9}\\s*,\\s*\\d{1,9})\\s*\\)");
         m = p.matcher(css);
         sb = new StringBuffer();
         while (m.find()) {
-            String[] rgbcolors = m.group(1).split(",");
+            String[] rgbcolors = m.group(1).split("\\s*,\\s*");
             StringBuffer hexcolor = new StringBuffer("#");
             for (i = 0; i < rgbcolors.length; i++) {
                 int val = Integer.parseInt(rgbcolors[i]);
@@ -1477,19 +1502,30 @@ public class CssCompressor {
      * consuming whole numbers and whole identifiers, and an operator is only respaced when the
      * token before it actually ends an operand.
      */
+    /**
+     * The functions whose arguments are a {@code <calc-sum>}, so CSS Values 4's
+     * "whitespace is required on both sides of + and -" applies inside them.
+     *
+     * <p>Only {@code calc} used to be respaced, so "min(10px + 5px,5px)" came out
+     * as "min(10px+5px,5px)" - a value the browser drops, taking the declaration
+     * with it. Matching is on the whole function name (a vendor prefix aside), so
+     * {@code minmax()} is not caught by the {@code min} entry.
+     */
+    private static final Set<String> MATH_FUNCTIONS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("calc", "min", "max", "clamp", "round", "mod", "rem")));
+
     private static String respaceCalcOperators(String css) {
         StringBuffer sb = new StringBuffer(css.length());
         int pos = 0;
         while (pos < css.length()) {
-            int start = css.indexOf("calc(", pos);
-            if (start < 0) {
+            int open = indexOfMathFunctionParen(css, pos);
+            if (open < 0) {
                 sb.append(css, pos, css.length());
                 break;
             }
-            int open = start + "calc(".length() - 1;
             int close = findMatchingParen(css, open);
             if (close < 0) {
-                // Unbalanced - leave it alone and keep looking after the "calc(".
+                // Unbalanced - leave it alone and keep looking after the "(".
                 sb.append(css, pos, open + 1);
                 pos = open + 1;
                 continue;
@@ -1500,6 +1536,39 @@ public class CssCompressor {
             pos = close + 1;
         }
         return sb.toString();
+    }
+
+    /**
+     * Index of the next "(" at or after {@code from} that opens a
+     * {@link #MATH_FUNCTIONS} argument list, or -1.
+     *
+     * <p>The identifier immediately before the "(" has to match in full, so
+     * "minmax(" is not taken for "max(". A vendor prefix is allowed, which is how
+     * "-webkit-calc(" kept working.
+     */
+    private static int indexOfMathFunctionParen(String css, int from) {
+        for (int open = css.indexOf('(', from); open >= 0; open = css.indexOf('(', open + 1)) {
+            int start = open;
+            while (start > 0 && isFunctionNameChar(css.charAt(start - 1))) {
+                start--;
+            }
+            if (start == open) {
+                continue;
+            }
+            String name = css.substring(start, open).toLowerCase();
+            if (MATH_FUNCTIONS.contains(name)) {
+                return open;
+            }
+            int prefix = name.lastIndexOf('-');
+            if (prefix > 0 && MATH_FUNCTIONS.contains(name.substring(prefix + 1))) {
+                return open;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isFunctionNameChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '-' || c == '_';
     }
 
     /**
