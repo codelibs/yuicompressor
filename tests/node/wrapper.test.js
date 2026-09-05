@@ -59,3 +59,49 @@ test('compresses a string that is not a path', (t, done) => {
         done();
     });
 });
+
+/*
+ * Failure reporting.
+ *
+ * A wrapper that cannot report a failure turns every failure into an empty
+ * file. `err` was derived solely from the substring '[ERROR]' appearing in
+ * stderr, so anything that killed the JVM before the compressor could print
+ * that marker - a missing class, a missing jar, a missing java - came back as
+ * `err === null` with an empty string as the compressed output.
+ */
+
+const NO_MARKER_IN_STDERR = /\[ERROR\]/;
+
+test('reports a non-zero exit even when stderr carries no [ERROR] marker', (t, done) => {
+    const realJar = compressor.jar;
+    compressor.jar = path.join(ROOT, 'target', 'does-not-exist.jar');
+
+    compressor.compressString('var x = 1;', { type: 'js' }, (err, out, stderr) => {
+        compressor.jar = realJar;
+        assert.doesNotMatch(String(stderr), NO_MARKER_IN_STDERR,
+            'this case is only meaningful while stderr has no [ERROR] marker');
+        assert.ok(err, 'a java process that exits non-zero must be reported as an error');
+        assert.strictEqual(out, '');
+        done();
+    });
+});
+
+test('reports a spawn failure instead of hanging', { timeout: 15000 }, (t, done) => {
+    const realPath = process.env.PATH;
+    process.env.PATH = '';
+
+    compressor.compressString('var x = 1;', { type: 'js' }, (err) => {
+        process.env.PATH = realPath;
+        assert.ok(err, 'java missing from PATH must be reported as an error');
+        done();
+    });
+});
+
+test('reports a file that cannot be read', (t, done) => {
+    // A directory exists, so the wrapper takes it for an input path, and then
+    // fs.readFile fails with EISDIR.
+    compressor.compress(path.join(ROOT, 'tests', 'node', 'files'), { type: 'js' }, (err) => {
+        assert.ok(err, 'a read error must reach the caller');
+        done();
+    });
+});

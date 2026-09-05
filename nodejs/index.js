@@ -86,7 +86,18 @@ var compressString = function(str, options, callback) {
     var args = [
         '-jar',
         exports.jar
-    ], buffer = '', errBuffer = '', child;
+    ], buffer = '', errBuffer = '', stdinError = null, settled = false, child;
+
+    // Exactly one of the child's outcomes reaches the caller. Without this a
+    // process that both fails to spawn and emits a broken pipe would call back
+    // twice.
+    var settle = function(err) {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        callback(err, buffer, errBuffer);
+    };
 
     Object.keys(options).forEach(function(key) {
         args.push('--' + key);
@@ -99,6 +110,20 @@ var compressString = function(str, options, callback) {
         stdio: ['pipe', 'pipe', 'pipe']
     });
 
+    // No java on PATH emits 'error' and never emits 'exit', so without this
+    // handler the callback was never invoked at all and the error was thrown
+    // as an uncaught exception.
+    child.on('error', function(e) {
+        settle(e);
+    });
+
+    // Writing to a child that has already died fails here. The exit or error
+    // handler is the one that explains why, so record it and let them report;
+    // it is only surfaced below if the child somehow still exits cleanly.
+    child.stdin.on('error', function(e) {
+        stdinError = e;
+    });
+
     child.stdin.write(str);
     child.stdin.end();
     
@@ -109,12 +134,20 @@ var compressString = function(str, options, callback) {
         errBuffer += chunk;
     });
     
-    child.on('exit', function() {
+    child.on('exit', function(code) {
         var err = null;
-        if (errBuffer.indexOf('[ERROR]') > -1) {
+        // A non-zero exit is a failure whether or not the compressor got far
+        // enough to print its own '[ERROR]' marker. Anything that kills the
+        // JVM first - a missing class, an unreadable jar - used to arrive here
+        // as success with an empty string for the compressed output.
+        if (code !== 0) {
+            err = errBuffer || new Error('java exited with code ' + code);
+        } else if (errBuffer.indexOf('[ERROR]') > -1) {
             err = errBuffer;
+        } else if (stdinError) {
+            err = stdinError;
         }
-        callback(err, buffer, errBuffer);
+        settle(err);
     });
 };
 
@@ -125,6 +158,13 @@ var compress = function(str, options, callback) {
     }
 
     getString(str, function(err, str, options) {
+
+        // A file that exists but cannot be read left `str` undefined, and the
+        // error was dropped here rather than handed to the caller.
+        if (err) {
+            callback(err, '', '');
+            return;
+        }
 
         compressString(str, options, callback);
         
