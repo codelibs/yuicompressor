@@ -227,6 +227,18 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   excluded. Pre-existing, not a regression
 - `original-*.jar` is no longer published to npm either: `files` shipped both jars, so the
   broken one travelled with the package
+- **A failed compression is no longer reported as success with an empty string.** `err` was
+  derived solely from the substring `[ERROR]` appearing in stderr, so anything that killed the
+  JVM before the compressor could print that marker - the missing class above, an unreadable jar
+  - arrived at the caller as `err === null` and `''` for the compressed output. A non-zero exit
+  is now an error regardless of what stderr says
+- **`java` missing from `PATH` no longer hangs the caller.** `spawn` emits `'error'` and never
+  emits `'exit'`, and nothing listened for it: the callback was never invoked, and the ENOENT
+  surfaced as an uncaught exception in whatever code happened to be running. Both `'error'` and a
+  broken pipe on the child's stdin are handled now, and exactly one outcome is delivered
+- A file that exists but cannot be read (a directory, a permissions failure) reports that error.
+  `compress` took the error from `fs.readFile` and discarded it, then passed `undefined` to
+  `child.stdin.write`, which threw `ERR_INVALID_ARG_TYPE` from inside the wrapper
 
 ### Changed (Node.js tests)
 - **The Node.js test suite ran zero assertions and reported success.** Four separate reasons, each
