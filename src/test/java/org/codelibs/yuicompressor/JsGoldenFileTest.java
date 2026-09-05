@@ -48,14 +48,16 @@ class JsGoldenFileTest {
      *
      * <p><b>jquery-1.6.4.js</b> - does not, and is not expected to, match
      * byte-for-byte: the golden was produced by a different compressor
-     * generation. Ours is 103,468 bytes against a golden of 101,992, a gap of
-     * 1,476 (1.4%); it was 2,823 before the redundant ";" and the conditional
-     * parentheses were fixed, and 137,798 before the ScopeBuilder traversal fix.
-     * Composition of the gap, measured over both files:
+     * generation. Ours is 104,154 bytes against a golden of 101,992, a gap of
+     * 2,162 (2.1%); it was 1,476 before free references started being reserved
+     * (+686, a correctness cost - see ScopeBuilder.reserveFreeReferences), 2,823
+     * before the redundant ";" and the conditional parentheses were fixed, and
+     * 137,798 before the ScopeBuilder traversal fix. Composition of the gap,
+     * measured over both files:
      *
      * <pre>
      * contributor                  bytes   evidence
-     * longer munged names         +1,325   identifier chars: golden 68,857, ours 70,182
+     * longer munged names         +2,011   identifier chars: golden 68,857, ours 70,868
      *                                      (identifier tokens are equal: 18,102 each)
      * extra parentheses             +84    "(" count: golden 3,529, ours 3,613
      * extra spaces                   +81   " " count: golden 1,368, ours 1,449
@@ -67,8 +69,9 @@ class JsGoldenFileTest {
      *
      * None of these is a correctness defect. What is left of the gap is almost
      * entirely short-name allocation: the two files have exactly the same number
-     * of identifier tokens, so the 1,325 extra characters are real, and that is
-     * Release 2 work.
+     * of identifier tokens, so the 2,011 extra characters are real. 686 of them
+     * are the price of correctness - locals no longer munged onto globals the
+     * file does not declare - and the rest is Release 2 work.
      *
      * <p>There is one further difference that costs no bytes: the banners are
      * byte-identical but sit at different offsets (golden 0 and 41,566, ours 0
@@ -147,10 +150,13 @@ class JsGoldenFileTest {
         new JavaScriptCompressor(new StringReader(source), SILENT).compress(out, -1, true, false, false, false);
         String compressed = out.toString();
 
-        // 104,815 until the redundant ";" before "}" and the parentheses around a
-        // conditional on an assignment's right-hand side were removed, which is
-        // worth 1,347 bytes here (1.3%).
-        assertEquals(103468, compressed.getBytes(StandardCharsets.UTF_8).length,
+        // 104,770 until a function's own name started being reserved, then 104,815,
+        // then 103,468 once the redundant ";" before "}" and the parentheses around
+        // a conditional on an assignment's right-hand side were removed. Reserving
+        // free references costs 686 of that back (0.7%), for the same reason and
+        // the same kind of bug as reserving a function's own name: a local was
+        // being munged onto a global the file does not declare.
+        assertEquals(104154, compressed.getBytes(StandardCharsets.UTF_8).length,
                 "jQuery output size changed; if this is an improvement, update this and the gap table above");
         assertEquals(0, count(compressed, "{{"),
                 "a redundant brace pair is back; see the D1 entry in the gap table above");

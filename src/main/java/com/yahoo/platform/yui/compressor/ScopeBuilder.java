@@ -20,6 +20,16 @@ public class ScopeBuilder {
     private ScriptOrFnScope globalScope;
     private Map<AstNode, ScriptOrFnScope> scopeMap = new HashMap<>();
 
+    /**
+     * References that resolved to nothing when they were visited, kept until the
+     * whole tree is built. A "var" or a function declaration later in the same
+     * scope hoists over its uses, so a reference is only genuinely free once
+     * every declaration is in place - deciding at visit time would treat
+     * "function f(){use(x);var x=1;}" as free and stop x being munged.
+     */
+    private final List<ScriptOrFnScope> unresolvedScopes = new ArrayList<>();
+    private final List<String> unresolvedNames = new ArrayList<>();
+
     public ScopeBuilder() {
         this.globalScope = new ScriptOrFnScope(0, null);
     }
@@ -30,6 +40,7 @@ public class ScopeBuilder {
     public ScriptOrFnScope buildScopeTree(AstRoot root) {
         scopeMap.put(root, globalScope);
         visitNode(root, globalScope, 0);
+        reserveFreeReferences();
         return globalScope;
     }
 
@@ -73,7 +84,7 @@ public class ScopeBuilder {
                         fn.getFunctionType() == FunctionNode.FUNCTION_STATEMENT
                                 ? currentScope
                                 : fnScope;
-                reserveFunctionName(nameScope, fnName.getIdentifier());
+                reserveNameUpChain(nameScope, fnName.getIdentifier());
             }
 
             // Declare function parameters as variables
@@ -116,6 +127,7 @@ public class ScopeBuilder {
                 AstNode target = vi.getTarget();
                 // Handle both simple names and destructuring patterns
                 declareVariableIdentifiers(target, currentScope);
+                visitPatternDefaults(target, currentScope, braceNesting);
 
                 // Visit initializer
                 AstNode initializer = vi.getInitializer();
@@ -136,6 +148,7 @@ public class ScopeBuilder {
                 VariableDeclaration varDecl = (VariableDeclaration) iterator;
                 for (VariableInitializer vi : varDecl.getVariables()) {
                     declareVariableIdentifiers(vi.getTarget(), currentScope);
+                    visitPatternDefaults(vi.getTarget(), currentScope, braceNesting);
                 }
             } else {
                 visitNode(iterator, currentScope, braceNesting);
@@ -203,6 +216,12 @@ public class ScopeBuilder {
             JavaScriptIdentifier id = findIdentifier(identifier, currentScope);
             if (id != null) {
                 id.incrementRefcount();
+            } else {
+                // Nothing declares this name yet. It may still be hoisted into
+                // scope by a later "var" or function declaration, so the decision
+                // waits until the tree is complete - see reserveFreeReferences().
+                unresolvedScopes.add(currentScope);
+                unresolvedNames.add(identifier);
             }
 
             // A bare reference to "eval" - called directly ("eval(...)") or
@@ -285,24 +304,52 @@ public class ScopeBuilder {
     }
 
     /**
-     * Reserves a function's own name in the scope that binds it and in every
+     * Takes every genuinely free reference out of the pool the munger picks from.
+     *
+     * <p>A name that resolves to no declaration anywhere is emitted verbatim - a
+     * global from another script, an implicit global, a bundler shim - so it must
+     * be reserved exactly as a function's own name is. Leaving it out let a local
+     * be renamed onto it:
+     * "function f(){var container='BODY';return a.init(container);}" became
+     * "function f(){var a='BODY';return a.init(a);}", which parses and then throws
+     * at run time. The short-name pool starts at single letters, so every
+     * one-letter free global - "L", "$", "_" and friends - collided with the FIRST
+     * local of any function.
+     *
+     * <p>Run after the traversal, so a name that a later declaration hoists into
+     * scope is resolved by then and keeps being munged.
+     */
+    private void reserveFreeReferences() {
+        for (int i = 0; i < unresolvedNames.size(); i++) {
+            ScriptOrFnScope scope = unresolvedScopes.get(i);
+            String name = unresolvedNames.get(i);
+            if (findIdentifier(name, scope) == null) {
+                reserveNameUpChain(scope, name);
+            }
+        }
+    }
+
+    /**
+     * Reserves a name that is emitted verbatim, in {@code owner} and in every
      * enclosing scope that gets munged.
      *
-     * <p>Reserving only the binding scope is not enough, because the name is
-     * emitted verbatim while the variables around it are renamed. A scope picks
-     * its free symbols by excluding what its own and its ANCESTORS' scopes use -
-     * it never looks down - so an outer variable could still be munged to this
-     * function's name, and inside the function's body that name resolves to the
-     * function, not to the variable. "function outer(){ var longName=5; var g =
-     * function a(){ return longName; }; }" munged longName to "a" and the body
-     * then returned the function itself.
+     * <p>Used for a function's own name and for a free reference - the two kinds
+     * of name that appear in the output without having been renamed.
      *
-     * <p>The global scope is reserved only when the function is itself global.
+     * <p>Reserving only {@code owner} is not enough, because a scope picks its
+     * free symbols by excluding what its own and its ANCESTORS' scopes use - it
+     * never looks down - so an outer variable could still be munged onto the
+     * name, and inside {@code owner} that name would then resolve to the outer
+     * variable. "function outer(){ var longName=5; var g = function a(){ return
+     * longName; }; }" munged longName to "a" and the body then returned the
+     * function itself.
+     *
+     * <p>The global scope is reserved only when {@code owner} is itself global.
      * It is never munged, so nothing there can collide; but every scope in the
      * file walks up to it, so a reservation there would take the name out of
      * every unrelated scope as well.
      */
-    private static void reserveFunctionName(ScriptOrFnScope owner, String name) {
+    private static void reserveNameUpChain(ScriptOrFnScope owner, String name) {
         for (ScriptOrFnScope scope = owner; scope != null; scope = scope.getParentScope()) {
             if (scope != owner && scope.getParentScope() == null) {
                 break;
@@ -339,6 +386,46 @@ public class ScopeBuilder {
             declareParameterIdentifiers(assign.getLeft(), scope);
         }
         // Note: Rest parameters (...args) are handled as Name nodes
+    }
+
+    /**
+     * Visits the default-value expressions inside a destructuring target.
+     *
+     * <p>{@link #declareVariableIdentifiers} walks the pattern to declare its
+     * bindings and stops there, and the VariableDeclaration branch returns
+     * without letting the generic traversal descend - so a default value was
+     * never visited at all. A function expression in one therefore got no
+     * ScriptOrFnScope, its own vars and parameters were never declared, and the
+     * munger handed those names to the enclosing scope's locals as well:
+     * "var {handler = function(){var a=100; return a+longName;}} = opts; var
+     * longName=5;" munged longName to "a", which the inner function's own
+     * un-munged "a" then shadowed - 105 became 200.
+     *
+     * <p>A parameter default does not need this: the generic traversal already
+     * descends into a FunctionNode's parameters.
+     */
+    private void visitPatternDefaults(AstNode target, ScriptOrFnScope scope, int braceNesting) {
+        if (target instanceof ArrayLiteral) {
+            for (AstNode element : ((ArrayLiteral) target).getElements()) {
+                if (element != null && !(element instanceof EmptyExpression)) {
+                    visitPatternDefaults(element, scope, braceNesting);
+                }
+            }
+        } else if (target instanceof ObjectLiteral) {
+            for (ObjectProperty prop : ((ObjectLiteral) target).getElements()) {
+                AstNode value = prop.getRight();
+                if (value != null) {
+                    visitPatternDefaults(value, scope, braceNesting);
+                }
+            }
+        } else if (target instanceof Assignment) {
+            Assignment assign = (Assignment) target;
+            visitPatternDefaults(assign.getLeft(), scope, braceNesting);
+            AstNode defaultValue = assign.getRight();
+            if (defaultValue != null) {
+                visitNode(defaultValue, scope, braceNesting);
+            }
+        }
     }
 
     /**
