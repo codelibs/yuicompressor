@@ -199,10 +199,14 @@ class ModernJsTest {
         assertEveryLineBreakIsAtAStatementBoundary(result);
     }
 
+    /**
+     * The fixture's "a" is a free global, so the inner "s" may not be munged onto
+     * it - it used to be, which is the collision ScopeBuilder now reserves against.
+     */
     @Test
     void lineBreakNeverSplitsAStringLiteralAfterNestedSeparatorInsertions() throws Exception {
         String result = compressAt(20, "var q = a + + +function(){ var s = \"hello\"; }();");
-        assertEquals("var q=a+ + +function(){var a=\"hello\"}\n();", result, result);
+        assertEquals("var q=a+ + +function(){var b=\"hello\"}\n();", result, result);
         assertParses(result);
         assertEveryLineBreakIsAtAStatementBoundary(result);
     }

@@ -1264,7 +1264,14 @@ public class MungedCodeGenerator {
         List<AstNode> elements = template.getElements();
         for (AstNode element : elements) {
             if (element instanceof TemplateCharacters) {
-                output.append(((TemplateCharacters) element).getValue());
+                // getValue() is the COOKED text - escapes already interpreted.
+                // Putting that back between backticks interprets them a second
+                // time: "\\d" becomes a literal "d" (breaking String.raw and every
+                // tagged template), "\\${" turns into a live substitution, "\\\\"
+                // swallows the next character and "\\`" ends the literal early.
+                TemplateCharacters chars = (TemplateCharacters) element;
+                String raw = chars.getRawValue();
+                output.append(raw != null ? raw : chars.getValue());
             } else {
                 output.append("${");
                 visitNode(element);
@@ -1493,13 +1500,55 @@ public class MungedCodeGenerator {
 
     private void visitPropertyGet(PropertyGet pg) {
         visitNode(pg.getTarget());
-        output.append(".");
+        appendMemberDot(pg.getTarget());
         AstNode property = pg.getProperty();
         if (property instanceof Name) {
             output.append(((Name) property).getIdentifier());
         } else {
             output.append(property.toSource());
         }
+    }
+
+    /**
+     * Appends the "." of a member access on {@code target}.
+     *
+     * <p>A bare decimal integer needs a second one: in "1 .toString()" the space
+     * is what stops the "." being read as the start of a fractional part, and
+     * dropping it leaves "1.toString()", a syntax error. "1..toString()" is the
+     * same length and needs no whitespace.
+     *
+     * <p>The decision is made from the literal's own text rather than from the
+     * characters already in the buffer. Reading the buffer looked equivalent and
+     * was not: "8e-5 .toFixed(3)" ends in a digit whose preceding character is
+     * "-", so a scan backwards called it a bare integer and produced "8e-5..",
+     * which no engine accepts.
+     */
+    private void appendMemberDot(AstNode target) {
+        if (target instanceof NumberLiteral && isBareDecimalInteger(((NumberLiteral) target).getValue())) {
+            output.append('.');
+        }
+        output.append('.');
+    }
+
+    /**
+     * Whether a numeric literal is written as decimal digits and nothing else -
+     * no ".", no exponent, no radix prefix, no BigInt "n". That is the only
+     * spelling a following "." is ambiguous after, because it is the only one the
+     * lexer can carry on reading as a fractional part. Numeric separators count
+     * as digits here: "1_000." is a literal too, so "1_000.toString()" is just as
+     * broken as "1.toString()".
+     */
+    private static boolean isBareDecimalInteger(String literal) {
+        if (literal == null || literal.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < literal.length(); i++) {
+            char c = literal.charAt(i);
+            if ((c < '0' || c > '9') && c != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void visitElementGet(ElementGet eg) {
