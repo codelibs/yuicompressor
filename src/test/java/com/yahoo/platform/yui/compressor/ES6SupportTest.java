@@ -329,7 +329,7 @@ public class ES6SupportTest {
 
     @Test
     public void testArrowFunctionSurvivesCompression() throws Exception {
-        assertEquals("const f=a=>{return a*2;};", compress("const f = x => x * 2;", true).trim());
+        assertEquals("const f=a=>{return a*2};", compress("const f = x => x * 2;", true).trim());
     }
 
     @Test
@@ -348,7 +348,7 @@ public class ES6SupportTest {
     @Test
     public void testForOfSurvivesCompression() throws Exception {
         // Note: Rhino 1.8.0 does not support 'const' in for-of loops, using 'let' instead
-        assertEquals("for(let x of arr){console.log(x);}",
+        assertEquals("for(let x of arr){console.log(x)}",
                 compress("for (let x of arr) { console.log(x); }", false).trim());
     }
 
@@ -377,14 +377,14 @@ public class ES6SupportTest {
     @Test
     public void testDefaultParamsSurviveCompression() throws Exception {
         String result = compress("function foo(x = 1, y = 2) { return x + y; }", false);
-        assertEquals("function foo(x=1,y=2){return x+y;}", result.trim(),
+        assertEquals("function foo(x=1,y=2){return x+y}", result.trim(),
                 "dropping the defaults changes foo() from 3 to NaN: " + result);
     }
 
     @Test
     public void testRestParamsSurviveCompression() throws Exception {
         String result = compress("function foo(...args) { return args.length; }", false);
-        assertEquals("function foo(...args){return args.length;}", result.trim(),
+        assertEquals("function foo(...args){return args.length}", result.trim(),
                 "dropping the '...' turns an array of the trailing arguments into a "
                         + "single positional parameter: " + result);
     }
@@ -501,7 +501,7 @@ public class ES6SupportTest {
         // Test: function([a, , b]) where middle element is skipped. Both
         // bindings munge; the hole between them keeps its position.
         String result = compress("function test([first, , third]) { return first + third; }");
-        assertEquals("function test([b,,a]){return b+a;}", result.trim(), result);
+        assertEquals("function test([b,,a]){return b+a}", result.trim(), result);
     }
 
     // ===== Combined ES6 Features =====

@@ -56,27 +56,27 @@ class ParameterListTest {
 
     @Test
     void plainParameter() throws Exception {
-        assertEquals("function f(b){return b;}", compress("function f(a){ return a; }"));
+        assertEquals("function f(b){return b}", compress("function f(a){ return a; }"));
     }
 
     @Test
     void defaultParameter() throws Exception {
-        assertEquals("function f(b=1){return b;}", compress("function f(a=1){ return a; }"));
+        assertEquals("function f(b=1){return b}", compress("function f(a=1){ return a; }"));
     }
 
     @Test
     void restParameter() throws Exception {
-        assertEquals("function f(...a){return a.length;}", compress("function f(...args){ return args.length; }"));
+        assertEquals("function f(...a){return a.length}", compress("function f(...args){ return args.length; }"));
     }
 
     @Test
     void plainThenRestParameter() throws Exception {
-        assertEquals("function f(b,...c){return c;}", compress("function f(a, ...rest){ return rest; }"));
+        assertEquals("function f(b,...c){return c}", compress("function f(a, ...rest){ return rest; }"));
     }
 
     @Test
     void destructuredArrayParameter() throws Exception {
-        assertEquals("function f([d,c]){return d+c;}", compress("function f([a,b]){ return a+b; }"));
+        assertEquals("function f([d,c]){return d+c}", compress("function f([a,b]){ return a+b; }"));
     }
 
     @Test
@@ -85,7 +85,7 @@ class ParameterListTest {
         // binding, so munging it would read a property named "a" that the
         // caller never passed. The key must stay and only the binding is
         // munged. Caught by DifferentialExecutionTest, which ran it.
-        assertEquals("function f({b:a}){return a;}", compress("function f({b}){ return b; }"));
+        assertEquals("function f({b:a}){return a}", compress("function f({b}){ return b; }"));
     }
 
     @Test
@@ -95,12 +95,12 @@ class ParameterListTest {
         // parent link back to the function, so without repairing that link
         // every name in it resolves against the GLOBAL scope and this emits
         // "function f(b,a=alpha)" - alpha now being an undefined global.
-        assertEquals("function f(b,a=b){return a;}", compress("function f(alpha, beta=alpha){ return beta; }"));
+        assertEquals("function f(b,a=b){return a}", compress("function f(alpha, beta=alpha){ return beta; }"));
     }
 
     @Test
     void defaultExpressionSeesTheEnclosingScope() throws Exception {
-        assertEquals("function outer(){var a=1;function f(b=a){return b;}return f();}",
+        assertEquals("function outer(){var a=1;function f(b=a){return b}return f()}",
                 compress("function outer(){ var o1 = 1; function f(a=o1){ return a; } return f(); }"));
     }
 
@@ -109,7 +109,7 @@ class ParameterListTest {
         // ScopeBuilder never traversed default expressions either, so an eval
         // hiding in one was invisible. It only became reachable once defaults
         // stopped being dropped, which is why it is pinned here.
-        assertEquals("function f(secretName,b=eval(\"secretName\")){return b;}",
+        assertEquals("function f(secretName,b=eval(\"secretName\")){return b}",
                 compress("function f(secretName, b=eval(\"secretName\")){ return b; }"));
     }
 
@@ -123,7 +123,7 @@ class ParameterListTest {
 
     @Test
     void defaultParameterOnAShorthandMethod() throws Exception {
-        assertEquals("var o={m(b=1){return b;}};", compress("var o = { m(a=1){ return a; } };"));
+        assertEquals("var o={m(b=1){return b}};", compress("var o = { m(a=1){ return a; } };"));
     }
 
     // --- rows that fail loudly -------------------------------------------

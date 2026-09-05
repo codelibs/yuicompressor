@@ -157,10 +157,10 @@ class IdempotencyTest {
      *
      * <p>With munging on, compression is NOT a fixed point, and the second pass
      * is not merely different - it is materially SMALLER. Re-compressing the
-     * jQuery output shrinks it by another 5,296 characters, roughly 5%. Since
+     * jQuery output shrinks it by another 5,303 characters, roughly 5%. Since
      * both passes run the same allocator on the same program, a single pass
      * leaving that much on the table points at the short-name allocation that
-     * {@link JsGoldenFileTest}'s gap table already measures as 1,280 characters
+     * {@link JsGoldenFileTest}'s gap table already measures as 1,325 characters
      * worse than the golden's.
      *
      * <p>Pinned exactly, like the size assertions in that class: if a Release 2
@@ -170,8 +170,8 @@ class IdempotencyTest {
     void mungingIsNotAFixedPoint() throws Exception {
         String once = js(read("jquery-1.6.4.js"), true);
         String twice = js(once, true);
-        assertEquals(104814, once.length(), "first-pass length changed; see JsGoldenFileTest's gap table");
-        assertEquals(99511, twice.length(), "second-pass length changed");
+        assertEquals(103467, once.length(), "first-pass length changed; see JsGoldenFileTest's gap table");
+        assertEquals(98164, twice.length(), "second-pass length changed");
         assertTrue(twice.length() < once.length(),
                 "a second munging pass is expected to be smaller while allocation is unoptimised");
     }

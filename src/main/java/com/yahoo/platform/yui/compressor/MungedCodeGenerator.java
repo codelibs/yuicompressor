@@ -137,6 +137,26 @@ public class MungedCodeGenerator {
         safeBreakOffsets.add(output.length());
     }
 
+    /**
+     * Marks a break only where the text so far ends at a statement separator.
+     *
+     * <p>A statement that gave up its ";" because a "}" follows is still a
+     * statement boundary - a line break there is covered by automatic semicolon
+     * insertion - but nothing in the output says so, and a reader checking the
+     * break offsets cannot tell it from a break in the middle of an identifier.
+     * Not offering the position keeps every recorded break verifiable; the "}"
+     * that follows immediately offers one anyway.
+     */
+    private void markSafeBreakIfAtSeparator() {
+        int length = output.length();
+        if (length > 0) {
+            char last = output.charAt(length - 1);
+            if (last == ';' || last == '}') {
+                markSafeBreak();
+            }
+        }
+    }
+
     private void visitNode(AstNode node) {
         if (node == null) {
             return;
@@ -208,7 +228,9 @@ public class MungedCodeGenerator {
                 visitSwitchStatement((SwitchStatement) node);
                 break;
             case Token.CASE:
-                visitSwitchCase((SwitchCase) node);
+                // Reached only when a case is visited outside its switch, where
+                // there is no following "}" to end the last statement.
+                visitSwitchCase((SwitchCase) node, false);
                 break;
             case Token.BREAK:
                 visitBreakStatement((BreakStatement) node);
@@ -898,7 +920,6 @@ public class MungedCodeGenerator {
         boolean needsBraces = !isBraced(thenPart);
         if (needsBraces) output.append("{");
         visitNode(thenPart);
-        if (needsBraces && needsSemicolon(thenPart)) output.append(";");
         if (needsBraces) output.append("}");
 
         AstNode elsePart = ifStmt.getElsePart();
@@ -911,7 +932,6 @@ public class MungedCodeGenerator {
                 boolean elseNeedsBraces = !isBraced(elsePart);
                 if (elseNeedsBraces) output.append("{");
                 visitNode(elsePart);
-                if (elseNeedsBraces && needsSemicolon(elsePart)) output.append(";");
                 if (elseNeedsBraces) output.append("}");
             }
         }
@@ -982,7 +1002,6 @@ public class MungedCodeGenerator {
         } else {
             output.append("{");
             visitNode(body);
-            if (needsSemicolon(body)) output.append(";");
             output.append("}");
         }
 
@@ -999,7 +1018,6 @@ public class MungedCodeGenerator {
         } else {
             output.append("{");
             visitNode(body);
-            if (needsSemicolon(body)) output.append(";");
             output.append("}");
         }
     }
@@ -1027,15 +1045,19 @@ public class MungedCodeGenerator {
         visitNode(switchStmt.getExpression());
         output.append("){");
 
-        for (SwitchCase caseNode : switchStmt.getCases()) {
-            visitSwitchCase(caseNode);
+        List<SwitchCase> cases = switchStmt.getCases();
+        SwitchCase lastCase = (cases == null || cases.isEmpty()) ? null : cases.get(cases.size() - 1);
+        if (cases != null) {
+            for (SwitchCase caseNode : cases) {
+                visitSwitchCase(caseNode, caseNode == lastCase);
+            }
         }
 
         output.append("}");
         markSafeBreak();
     }
 
-    private void visitSwitchCase(SwitchCase caseNode) {
+    private void visitSwitchCase(SwitchCase caseNode, boolean isLastCase) {
         AstNode expression = caseNode.getExpression();
         if (expression == null) {
             output.append("default:");
@@ -1050,12 +1072,15 @@ public class MungedCodeGenerator {
 
         List<AstNode> statements = caseNode.getStatements();
         if (statements != null) {
+            AstNode last = statements.isEmpty() ? null : statements.get(statements.size() - 1);
             for (AstNode stmt : statements) {
                 visitNode(stmt);
-                if (needsSemicolon(stmt)) {
+                // Only the last case's last statement is followed by the switch's
+                // "}"; anywhere else the ";" separates it from the next "case".
+                if ((!isLastCase || stmt != last) && needsSemicolon(stmt)) {
                     output.append(";");
                 }
-                markSafeBreak();
+                markSafeBreakIfAtSeparator();
             }
         }
     }
@@ -1137,29 +1162,31 @@ public class MungedCodeGenerator {
     }
 
     private void visitBlock(Block block) {
-        output.append("{");
-        for (Node child : block) {
-            if (child instanceof AstNode) {
-                visitNode((AstNode) child);
-                if (needsSemicolon((AstNode) child)) {
-                    output.append(";");
-                }
-                markSafeBreak();
-            }
-        }
-        output.append("}");
-        markSafeBreak();
+        visitStatementList(block, block.getLastChild());
     }
 
     private void visitScope(Scope scope) {
+        visitStatementList(scope, scope.getLastChild());
+    }
+
+    /**
+     * Emits "{" statements "}" for a block-like node.
+     *
+     * <p>The last statement's ";" is left out: "}" ends the statement just as
+     * well, and a reader that needs one gets it from automatic semicolon
+     * insertion. Upstream YUI does the same ("Remove ';' when followed by a
+     * '}'", CHANGELOG 1.1) and it is worth 0.66% of the output over a
+     * real-world corpus.
+     */
+    private void visitStatementList(Iterable<Node> statements, Node last) {
         output.append("{");
-        for (Node child : scope) {
+        for (Node child : statements) {
             if (child instanceof AstNode) {
                 visitNode((AstNode) child);
-                if (needsSemicolon((AstNode) child)) {
+                if (child != last && needsSemicolon((AstNode) child)) {
                     output.append(";");
                 }
-                markSafeBreak();
+                markSafeBreakIfAtSeparator();
             }
         }
         output.append("}");
@@ -1743,7 +1770,11 @@ public class MungedCodeGenerator {
     private boolean needsParentheses(AstNode child, InfixExpression parent, boolean isLeft) {
         // Simple heuristic: if child is also an infix expression with lower precedence
         if (child instanceof ConditionalExpression) {
-            return true;
+            // An assignment's right-hand side is an AssignmentExpression, which a
+            // conditional already is, so "a=b?c:d" needs no parentheses. Every
+            // other operator binds tighter than "?:" and so does need them:
+            // "a+(b?c:d)" would otherwise re-parse as "(a+b)?c:d".
+            return isLeft || !(parent instanceof Assignment);
         }
         if (child instanceof InfixExpression) {
             int childType = child.getType();

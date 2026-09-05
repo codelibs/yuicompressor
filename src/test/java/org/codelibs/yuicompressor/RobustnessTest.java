@@ -266,13 +266,13 @@ class RobustnessTest {
 
     @Test
     void aNonAsciiLocalIsMungedAndANonAsciiGlobalIsNot() throws Exception {
-        assertEquals("function f(){var a=1;return a;}", js("function f(){ var ある = 1; return ある; }"));
+        assertEquals("function f(){var a=1;return a}", js("function f(){ var ある = 1; return ある; }"));
         assertEquals("var ある=1;ある++;", js("var ある = 1; ある++;"));
     }
 
     @Test
     void nonAsciiAndAstralStringContentSurvivesMunging() throws Exception {
-        assertEquals("function f(){var a=\"こんにちは😀\";return a;}",
+        assertEquals("function f(){var a=\"こんにちは😀\";return a}",
                 js("function f(){ var greeting = \"こんにちは😀\"; return greeting; }"));
     }
 
