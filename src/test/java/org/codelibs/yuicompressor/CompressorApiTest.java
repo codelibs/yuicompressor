@@ -45,7 +45,7 @@ class CompressorApiTest {
         }
     };
 
-    private static final String SOURCE = "function f(alpha){var beta=alpha;return beta;}";
+    private static final String SOURCE = "function f(alpha){var beta=alpha;return beta}";
 
     private static String compress(String source, boolean munge, boolean verbose, boolean preserveSemi,
             boolean disableOpt, boolean preserveHints) throws IOException {
@@ -93,9 +93,9 @@ class CompressorApiTest {
      */
     @Test
     void theSemicolonBeforeAClosingBraceIsEmittedWithOrWithoutPreserveSemi() throws Exception {
-        assertEquals("function f(){var a=1;return a;}",
+        assertEquals("function f(){var a=1;return a}",
                 compress("function f(){ var x = 1; return x }", true, false, true, false, false));
-        assertEquals("function f(){var a=1;return a;}",
+        assertEquals("function f(){var a=1;return a}",
                 compress("function f(){ var x = 1; return x }", true, false, false, false, false));
     }
 
@@ -124,7 +124,7 @@ class CompressorApiTest {
         StringWriter map = new StringWriter();
         new JavaScriptCompressor(new StringReader(SOURCE), SILENT)
                 .compress(out, map, -1, true, false, false, false, false);
-        assertEquals("function f(b){var a=b;return a;}", out.toString());
+        assertEquals("function f(b){var a=b;return a}", out.toString());
         // "f: f" is the function declaration's own name, in the global scope and so
         // never munged. It is listed because it is now a declared binding - reserving
         // it is what stops a local being munged to "f" - and the mapping reports every
@@ -212,7 +212,7 @@ class CompressorApiTest {
     void aNullReporterCompressesValidSourceNormally() throws Exception {
         StringWriter out = new StringWriter();
         new JavaScriptCompressor(new StringReader(SOURCE), null).compress(out, -1, true, false, false, false);
-        assertEquals("function f(b){var a=b;return a;}", out.toString());
+        assertEquals("function f(b){var a=b;return a}", out.toString());
     }
 
     /**

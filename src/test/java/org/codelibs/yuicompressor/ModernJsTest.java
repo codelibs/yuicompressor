@@ -194,7 +194,7 @@ class ModernJsTest {
     @Test
     void lineBreakNeverSplitsAnIdentifierAfterNestedSeparatorInsertions() throws Exception {
         String result = compressAt(20, "var q = a + + +function(){ abcdefghijklmnop; }();");
-        assertEquals("var q=a+ + +function(){abcdefghijklmnop;\n}\n();", result, result);
+        assertEquals("var q=a+ + +function(){abcdefghijklmnop}\n();", result, result);
         assertParses(result);
         assertEveryLineBreakIsAtAStatementBoundary(result);
     }
@@ -202,7 +202,7 @@ class ModernJsTest {
     @Test
     void lineBreakNeverSplitsAStringLiteralAfterNestedSeparatorInsertions() throws Exception {
         String result = compressAt(20, "var q = a + + +function(){ var s = \"hello\"; }();");
-        assertEquals("var q=a+ + +function(){var a=\"hello\";\n}\n();", result, result);
+        assertEquals("var q=a+ + +function(){var a=\"hello\"}\n();", result, result);
         assertParses(result);
         assertEveryLineBreakIsAtAStatementBoundary(result);
     }
@@ -213,7 +213,7 @@ class ModernJsTest {
         // two - the same defect at a different magnitude, and the case that
         // shows the fix is a per-separator shift, not a fixed correction.
         String result = compressAt(20, "var q = a + +function(){ abcdefghijklmnop; }();");
-        assertEquals("var q=a+ +function(){abcdefghijklmnop;\n}\n();", result, result);
+        assertEquals("var q=a+ +function(){abcdefghijklmnop}\n();", result, result);
         assertParses(result);
         assertEveryLineBreakIsAtAStatementBoundary(result);
     }
@@ -270,7 +270,7 @@ class ModernJsTest {
     @Test
     void yieldStarDelegatesRatherThanYieldingTheGeneratorOnce() throws Exception {
         String result = compressNoMunge("function* g(){ yield* other(); }");
-        assertEquals("function* g(){yield* other();}", result,
+        assertEquals("function* g(){yield* other()}", result,
                 "'yield* x()' delegates to another generator; dropping the '*' makes it "
                         + "'yield x()', which yields the generator object once instead: " + result);
     }
@@ -278,14 +278,14 @@ class ModernJsTest {
     @Test
     void plainYieldStillHasNoStar() throws Exception {
         String result = compressNoMunge("function* g(){ yield other(); }");
-        assertEquals("function* g(){yield other();}", result,
+        assertEquals("function* g(){yield other()}", result,
                 "a plain (non-delegating) yield must not gain a '*': " + result);
     }
 
     @Test
     void labeledStatementDoesNotCrashTheCompressor() throws Exception {
         String result = compressNoMunge("outer: for (var i=0;i<3;i++) { break outer; }");
-        assertEquals("outer:for(var i=0;i<3;i++){break outer;}", result,
+        assertEquals("outer:for(var i=0;i<3;i++){break outer}", result,
                 "the label and the 'break outer' inside it must survive, and a labeled "
                         + "for-loop must not gain a needless trailing ';' (a for-loop never "
                         + "needs one): " + result);
@@ -434,14 +434,14 @@ class ModernJsTest {
     @Test
     void labeledForLoopDoesNotGainANeedlessSemicolon() throws Exception {
         String result = compressNoMunge("outer: for (var i=0;i<3;i++) { f(); }");
-        assertEquals("outer:for(var i=0;i<3;i++){f();}", result,
+        assertEquals("outer:for(var i=0;i<3;i++){f()}", result,
                 "a for-loop never needs a trailing ';', with or without a label: " + result);
     }
 
     @Test
     void labeledBlockDoesNotGainANeedlessSemicolon() throws Exception {
         String result = compressNoMunge("outer: { g(); }");
-        assertEquals("outer:{g();}", result,
+        assertEquals("outer:{g()}", result,
                 "a block never needs a trailing ';', with or without a label: " + result);
     }
 
@@ -463,7 +463,7 @@ class ModernJsTest {
     @Test
     void evalReadingALocalByNamePreventsThatLocalFromBeingMunged() throws Exception {
         String result = compress("function f(){ var secretName = 42; return eval(\"secretName\"); }");
-        assertEquals("function f(){var secretName=42;return eval(\"secretName\");}", result,
+        assertEquals("function f(){var secretName=42;return eval(\"secretName\")}", result,
                 "eval(\"secretName\") only works if 'secretName' keeps its name: " + result);
     }
 
@@ -473,7 +473,7 @@ class ModernJsTest {
         // only started getting scopes (and munged) once ScopeBuilder learned
         // to reach them; before that this case was accidentally safe.
         String result = compress("run(function(secretName){ return eval(\"secretName\"); });");
-        assertEquals("run(function(secretName){return eval(\"secretName\");});", result,
+        assertEquals("run(function(secretName){return eval(\"secretName\")});", result,
                 "the parameter read by eval() must not be renamed: " + result);
     }
 
@@ -485,7 +485,7 @@ class ModernJsTest {
         String result = compress(
                 "function outer(){ var outerLocal = 7; function inner(){ return eval(\"outerLocal\"); } return inner(); }");
         assertEquals(
-                "function outer(){var outerLocal=7;function inner(){return eval(\"outerLocal\");}return inner();}",
+                "function outer(){var outerLocal=7;function inner(){return eval(\"outerLocal\")}return inner()}",
                 result, "eval() in inner() can still read outerLocal by name: " + result);
     }
 
@@ -497,7 +497,7 @@ class ModernJsTest {
         String result = compress(
                 "function f(){ var a = 1; eval(\"a\"); function g(){ var longLocalName = 2; return longLocalName; } return g(); }");
         assertEquals(
-                "function f(){var a=1;eval(\"a\");function g(){var b=2;return b;}return g();}",
+                "function f(){var a=1;eval(\"a\");function g(){var b=2;return b}return g()}",
                 result, "g() has no eval of its own, so its local must still be munged: " + result);
     }
 
@@ -506,7 +506,7 @@ class ModernJsTest {
         // "var e = eval" is still a bare reference to the identifier eval,
         // even though it's not invoked at this call site.
         String result = compress("function f(){ var secretName = 9; var e = eval; return e(\"secretName\"); }");
-        assertEquals("function f(){var secretName=9;var e=eval;return e(\"secretName\");}", result,
+        assertEquals("function f(){var secretName=9;var e=eval;return e(\"secretName\")}", result,
                 "aliasing eval must still protect the local it might read: " + result);
     }
 
@@ -516,14 +516,14 @@ class ModernJsTest {
         // scope and can never see this function's locals, so it is not the
         // hazard a bare "eval" reference is and must not disable munging.
         String result = compress("function f(){ var localOnly = 1; return window.eval(\"1+1\"); }");
-        assertEquals("function f(){var a=1;return window.eval(\"1+1\");}", result,
+        assertEquals("function f(){var a=1;return window.eval(\"1+1\")}", result,
                 "window.eval is an indirect eval and cannot see localOnly: " + result);
     }
 
     @Test
     void withStatementPreventsMungingOfLocalsItCanShadow() throws Exception {
         String result = compress("function f(obj){ var x = 5; with (obj) { return x; } }");
-        assertEquals("function f(obj){var x=5;with(obj){return x;}}", result,
+        assertEquals("function f(obj){var x=5;with(obj){return x}}", result,
                 "renaming x would change which binding 'with' resolves to: " + result);
     }
 
@@ -531,7 +531,7 @@ class ModernJsTest {
     void ordinaryCodeWithNoEvalOrWithStillMungesNormally() throws Exception {
         // Guards against the fix becoming a blanket munging disable.
         String result = compress("function f(){ var longVariableName = 1; return longVariableName + 1; }");
-        assertEquals("function f(){var a=1;return a+1;}", result,
+        assertEquals("function f(){var a=1;return a+1}", result,
                 "code with no eval/with must still munge exactly as before: " + result);
     }
 
@@ -548,26 +548,26 @@ class ModernJsTest {
     @Test
     void nullishCoalescingMungesItsOperands() throws Exception {
         String result = compress("function f(alpha, beta) { var gamma = alpha ?? beta; return gamma; }");
-        assertEquals("function f(c,b){var a=c??b;return a;}", result,
+        assertEquals("function f(c,b){var a=c??b;return a}", result,
                 "toSource() would re-emit 'alpha ?? beta', turning both locals into globals: " + result);
     }
 
     @Test
     void logicalOrAssignmentMungesItsOperands() throws Exception {
         String result = compress("function f(alpha, beta) { alpha ||= beta; return alpha; }");
-        assertEquals("function f(b,a){b||=a;return b;}", result, result);
+        assertEquals("function f(b,a){b||=a;return b}", result, result);
     }
 
     @Test
     void logicalAndAssignmentMungesItsOperands() throws Exception {
         String result = compress("function f(alpha, beta) { alpha &&= beta; return alpha; }");
-        assertEquals("function f(b,a){b&&=a;return b;}", result, result);
+        assertEquals("function f(b,a){b&&=a;return b}", result, result);
     }
 
     @Test
     void nullishAssignmentMungesItsOperands() throws Exception {
         String result = compress("function f(alpha, beta) { alpha ??= beta; return alpha; }");
-        assertEquals("function f(b,a){b??=a;return b;}", result, result);
+        assertEquals("function f(b,a){b??=a;return b}", result, result);
     }
 
     @Test
@@ -575,7 +575,7 @@ class ModernJsTest {
         // Not in the original triage of this defect, but the same shape:
         // Token.ASSIGN_EXP had no case either, so "**=" leaked too.
         String result = compress("function f(alpha, beta) { alpha **= beta; return alpha; }");
-        assertEquals("function f(b,a){b**=a;return b;}", result, result);
+        assertEquals("function f(b,a){b**=a;return b}", result, result);
     }
 
     @Test
@@ -583,7 +583,7 @@ class ModernJsTest {
         // The end-to-end corruption: source evaluates to undefined, the old
         // output threw a TypeError because toSource() dropped the "?.".
         String result = compress("function f(config) { return config.timeout ?? config.server?.timeout; }");
-        assertEquals("function f(a){return a.timeout??a.server?.timeout;}", result,
+        assertEquals("function f(a){return a.timeout??a.server?.timeout}", result,
                 "dropping '?.' turns a safe undefined into a TypeError: " + result);
     }
 
@@ -603,38 +603,38 @@ class ModernJsTest {
 
     @Test
     void aBracedLoopBodyDoesNotGainASecondBracePair() throws Exception {
-        assertEquals("for(var i=0;i<3;i++){f();}", compressNoMunge("for (var i=0;i<3;i++) { f(); }"));
+        assertEquals("for(var i=0;i<3;i++){f()}", compressNoMunge("for (var i=0;i<3;i++) { f(); }"));
     }
 
     @Test
     void aBracedWhileBodyDoesNotGainASecondBracePair() throws Exception {
-        assertEquals("while(x){f();}", compressNoMunge("while (x) { f(); }"));
+        assertEquals("while(x){f()}", compressNoMunge("while (x) { f(); }"));
     }
 
     @Test
     void aBracedDoBodyDoesNotGainASecondBracePair() throws Exception {
-        assertEquals("do{f();}while(x)", compressNoMunge("do { f(); } while (x);"));
+        assertEquals("do{f()}while(x)", compressNoMunge("do { f(); } while (x);"));
     }
 
     @Test
     void aBracedIfAndElseBodyDoNotGainASecondBracePair() throws Exception {
-        assertEquals("if(x){f();}else{g();}", compressNoMunge("if (x) { f(); } else { g(); }"));
+        assertEquals("if(x){f()}else{g()}", compressNoMunge("if (x) { f(); } else { g(); }"));
     }
 
     @Test
     void anUnbracedBodyStillGetsItsBraces() throws Exception {
         // The other direction: braces are what make the emitted body a single
         // statement, so a single-statement body must still get them.
-        assertEquals("for(var i=0;i<3;i++){f();}", compressNoMunge("for (var i=0;i<3;i++) f();"));
-        assertEquals("while(x){f();}", compressNoMunge("while (x) f();"));
-        assertEquals("if(x){f();}else{g();}", compressNoMunge("if (x) f(); else g();"));
+        assertEquals("for(var i=0;i<3;i++){f()}", compressNoMunge("for (var i=0;i<3;i++) f();"));
+        assertEquals("while(x){f()}", compressNoMunge("while (x) f();"));
+        assertEquals("if(x){f()}else{g()}", compressNoMunge("if (x) f(); else g();"));
     }
 
     @Test
     void danglingElseBindingIsUnchanged() throws Exception {
         // The inner "if" has no else of its own, so the braces around it are
         // load-bearing: without them the "else" would bind to the inner "if".
-        assertEquals("if(a){if(b){f();}}else{g();}", compressNoMunge("if (a) { if (b) f(); } else g();"));
+        assertEquals("if(a){if(b){f()}}else{g()}", compressNoMunge("if (a) { if (b) f(); } else g();"));
     }
 
     @Test
@@ -650,14 +650,14 @@ class ModernJsTest {
     @Test
     void aShorthandObjectLiteralPropertyKeepsItsKeyWhenTheBindingIsMunged() throws Exception {
         String result = compress("function f(){ var longLocalName = 7; return { longLocalName }; }");
-        assertEquals("function f(){var a=7;return{longLocalName:a};}", result,
+        assertEquals("function f(){var a=7;return{longLocalName:a}}", result,
                 "munging the shorthand would rename the property itself: " + result);
     }
 
     @Test
     void aShorthandDestructuringPatternKeepsItsKeyWhenTheBindingIsMunged() throws Exception {
         String result = compress("function f(){ var o = { b: 7 }; var { b } = o; return b; }");
-        assertEquals("function f(){var c={b:7};var {b:a}=c;return a;}", result,
+        assertEquals("function f(){var c={b:7};var {b:a}=c;return a}", result,
                 "munging the shorthand would read a property that does not exist: " + result);
     }
 
@@ -670,14 +670,14 @@ class ModernJsTest {
     @Test
     void aShorthandDestructuredParameterWithADefaultKeepsItsKey() throws Exception {
         String result = compress("function f({ someKey = 5 }) { return someKey; }");
-        assertEquals("function f({someKey:a=5}){return a;}", result,
+        assertEquals("function f({someKey:a=5}){return a}", result,
                 "the binding must be munged and the key must not: " + result);
     }
 
     @Test
     void aShorthandVarDestructuringWithADefaultKeepsItsKey() throws Exception {
         String result = compress("function f(o) { var { someKey = 5 } = o; return someKey; }");
-        assertEquals("function f(b){var {someKey:a=5}=b;return a;}", result, result);
+        assertEquals("function f(b){var {someKey:a=5}=b;return a}", result, result);
     }
 
     @Test
@@ -685,7 +685,7 @@ class ModernJsTest {
         // The silent one: before this fix it emitted "{someKey:someKey=5}",
         // which parses and returns undefined instead of the default.
         String result = compress("function f(o) { var someKey; ({ someKey = 5 } = o); return someKey; }");
-        assertEquals("function f(b){var a;({someKey:a=5}=b);return a;}", result, result);
+        assertEquals("function f(b){var a;({someKey:a=5}=b);return a}", result, result);
     }
 
     @Test
@@ -693,12 +693,12 @@ class ModernJsTest {
         // "{k: b = 1}" has the same node shape but two DISTINCT Name objects,
         // so the key is not the binding and only the binding is munged. This is
         // the case the object-identity discriminator must keep telling apart.
-        assertEquals("function f({k:a=5}){return a;}", compress("function f({ k: someKey = 5 }) { return someKey; }"));
+        assertEquals("function f({k:a=5}){return a}", compress("function f({ k: someKey = 5 }) { return someKey; }"));
     }
 
     @Test
     void anArrayDestructuringDefaultIsUnaffected() throws Exception {
-        assertEquals("function f([a=5]){return a;}", compress("function f([ someKey = 5 ]) { return someKey; }"));
+        assertEquals("function f([a=5]){return a}", compress("function f([ someKey = 5 ]) { return someKey; }"));
     }
 
     @Test
@@ -719,12 +719,12 @@ class ModernJsTest {
         // Rhino wraps a generator method's key in a GeneratorMethodDefinition
         // whose type is Token.MUL, so the object-literal path cast it to
         // InfixExpression and died with a ClassCastException.
-        assertEquals("var o={*gen(){yield 1;}};", compressNoMunge("var o = { *gen(){ yield 1; } };"));
+        assertEquals("var o={*gen(){yield 1}};", compressNoMunge("var o = { *gen(){ yield 1; } };"));
     }
 
     @Test
     void aComputedGeneratorObjectMethodCompresses() throws Exception {
-        assertEquals("var o={*[1+1](){yield 1;}};", compressNoMunge("var o = { *[1+1](){ yield 1; } };"));
+        assertEquals("var o={*[1+1](){yield 1}};", compressNoMunge("var o = { *[1+1](){ yield 1; } };"));
     }
 
     // Commas in an array literal are separators, so a trailing one is not an
@@ -770,14 +770,14 @@ class ModernJsTest {
         // compressor's own parser rejects it - so it was invalid output
         // emitted with exit 0.
         String result = compressNoMunge("for each (var b in a) { f(b); }");
-        assertEquals("for each(var b in a){f(b);}", result, result);
+        assertEquals("for each(var b in a){f(b)}", result, result);
     }
 
     @Test
     void aCatchGuardIsNotDropped() throws Exception {
         // Dropping the guard silently widens the catch to every exception.
         String result = compressNoMunge("try { g(); } catch (e if e instanceof TypeError) { h(e); }");
-        assertEquals("try{g();}catch(e if e instanceof TypeError){h(e);}", result, result);
+        assertEquals("try{g()}catch(e if e instanceof TypeError){h(e)}", result, result);
     }
 
     @Test

@@ -114,8 +114,8 @@ class CliOptionsProcessTest {
         return file;
     }
 
-    private static final String JS = "function f(alpha){var beta=alpha;return beta;}";
-    private static final String JS_MIN = "function f(b){var a=b;return a;}";
+    private static final String JS = "function f(alpha){var beta=alpha;return beta}";
+    private static final String JS_MIN = "function f(b){var a=b;return a}";
 
     // --- --type inference --------------------------------------------------
 

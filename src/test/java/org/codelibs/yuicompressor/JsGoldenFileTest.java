@@ -48,28 +48,26 @@ class JsGoldenFileTest {
      *
      * <p><b>jquery-1.6.4.js</b> - does not, and is not expected to, match
      * byte-for-byte: the golden was produced by a different compressor
-     * generation. Measured after this release's fixes, ours is 104,815 bytes
-     * against a golden of 101,992, a gap of 2,823 (2.8%); it was 137,798 before
-     * the ScopeBuilder traversal fix. Composition of the gap, measured over both
-     * files:
+     * generation. Ours is 103,468 bytes against a golden of 101,992, a gap of
+     * 1,476 (1.4%); it was 2,823 before the redundant ";" and the conditional
+     * parentheses were fixed, and 137,798 before the ScopeBuilder traversal fix.
+     * Composition of the gap, measured over both files:
      *
      * <pre>
      * contributor                  bytes   evidence
-     * missing ";" before "}"      +1,259   ";}" count: golden 0, ours 1,259
-     * longer munged names         +1,280   identifier chars: golden 68,520, ours 69,800
-     *                                      (identifier tokens are equal: 18,037 each)
-     * extra parentheses             +128   "(" count: golden 3,529, ours 3,657
+     * longer munged names         +1,325   identifier chars: golden 68,857, ours 70,182
+     *                                      (identifier tokens are equal: 18,102 each)
+     * extra parentheses             +84    "(" count: golden 3,529, ours 3,613
      * extra spaces                   +81   " " count: golden 1,368, ours 1,449
      * fewer braces                   -62   "{" count: golden 1,917, ours 1,855
+     * missing ";" before "}"           0   ";}" count: golden 0, ours 0
      * "/*!" banners                    0   both files: 2 banners, 537 bytes, byte-identical
-     * unattributed                   ~92   other punctuation
+     * unattributed                   ~48   other punctuation
      * </pre>
      *
-     * None of these is a correctness defect. Two notes on what the numbers say:
-     * upstream's documented "Remove ';' when followed by a '}'" (CHANGELOG 1.1)
-     * is absent here, and our short-name allocation is genuinely worse rather
-     * than merely different - the two files have exactly the same number of
-     * identifier tokens, so the 1,280 extra characters are real. Both are
+     * None of these is a correctness defect. What is left of the gap is almost
+     * entirely short-name allocation: the two files have exactly the same number
+     * of identifier tokens, so the 1,325 extra characters are real, and that is
      * Release 2 work.
      *
      * <p>There is one further difference that costs no bytes: the banners are
@@ -88,19 +86,16 @@ class JsGoldenFileTest {
      * this golden should be re-examined rather than matched.
      *
      * <p><b>_string_combo.js</b> - string-literal merging ("a"+"b"+"c" to "abc",
-     * CHANGELOG 2.1) is absent, plus the ";}" difference above.
+     * CHANGELOG 2.1) is absent.
      *
-     * <p><b>_string_combo2.js</b> - the ";}" difference only. The golden also
-     * carries a stray ";" after the function declaration, an empty statement
-     * this generator does not emit.
+     * <p><b>_string_combo2.js</b> - the golden carries a stray ";" after the
+     * function declaration, an empty statement this generator does not emit.
      *
-     * <p><b>_string_combo3.js</b> - same as _string_combo2.js. The redundant
-     * double brace that used to be its most visible difference is fixed, but it
-     * was not the only one, so this fixture stays quarantined.
+     * <p><b>_string_combo3.js</b> - same as _string_combo2.js.
      *
      * <p><b>_syntax_error.js</b> - quote-character optimisation is absent: the
      * source's single-quoted strings stay single-quoted where the golden
-     * normalises them to double quotes. Plus the ";}" difference above.
+     * normalises them to double quotes.
      */
     private static final List<String> KNOWN_FAILURES = List.of("issue86.js", "jquery-1.6.4.js", "_munge.js",
             "_string_combo.js", "_string_combo2.js", "_string_combo3.js", "_syntax_error.js");
@@ -152,16 +147,15 @@ class JsGoldenFileTest {
         new JavaScriptCompressor(new StringReader(source), SILENT).compress(out, -1, true, false, false, false);
         String compressed = out.toString();
 
-        // 104,770 until a function's own name started being reserved. Reserving it
-        // costs 45 bytes here - some locals fall back to a two-character name - and
-        // buys back a local that was being munged to the name of the function beside
-        // it. Correctness at 0.04%.
-        assertEquals(104815, compressed.getBytes(StandardCharsets.UTF_8).length,
+        // 104,815 until the redundant ";" before "}" and the parentheses around a
+        // conditional on an assignment's right-hand side were removed, which is
+        // worth 1,347 bytes here (1.3%).
+        assertEquals(103468, compressed.getBytes(StandardCharsets.UTF_8).length,
                 "jQuery output size changed; if this is an improvement, update this and the gap table above");
         assertEquals(0, count(compressed, "{{"),
                 "a redundant brace pair is back; see the D1 entry in the gap table above");
-        assertEquals(1259, count(compressed, ";}"),
-                "the ';}' count changed; upstream's ';' removal is unimplemented and this pins its absence");
+        assertEquals(0, count(compressed, ";}"),
+                "a ';' before a '}' is back; it is redundant and upstream removes it too");
     }
 
     private static int count(String haystack, String needle) {
