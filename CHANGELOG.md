@@ -395,6 +395,11 @@ bought, and it is the safe direction to fail in.
   the rest still pass
 - Updated Maven plugins to current releases; removed the leftover Ant build (`build.xml`,
   `ant.properties`) and Travis CI configuration (`.travis.yml`)
+- **Artifact signing is a release step again.** `maven-gpg-plugin` was bound to `verify` outside
+  any profile, so every `mvn install` and `mvn verify` tried to sign - and failed the build after
+  the whole test suite had already passed on any machine without a GPG key and a working pinentry.
+  `docs/BUILDING.md` has always described signing as `mvn clean package -P release`; the POM now
+  matches it, and `mvn install` succeeds unsigned
 
 ## [2.4.8]
 
