@@ -110,4 +110,3 @@ jobs:
 
     - name: Run Node.js tests
       run: npm test
-      continue-on-error: true

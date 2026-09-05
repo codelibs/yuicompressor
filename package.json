@@ -21,9 +21,7 @@
     "bugs": { "url" : "http://yuilibrary.com/projects/yuicompressor/newticket" },
     "dependencies": {
     },
-    "devDependencies": {
-        "yuitest": "*"
-    },
+    "devDependencies": {},
     "keywords": [
         "yui", "compressor", "munger", "cssmin", "minify", "minification"
     ],
@@ -33,10 +31,11 @@
     },
     "files": [
         "target/*.jar",
+        "!target/original-*.jar",
         "nodejs"
     ],
     "scripts": {
-        "test": "yuitest ./tests/node/tests.js"
+        "test": "node --test \"tests/node/**/*.test.js\""
     },
     "licenses":[
         {
