@@ -15,7 +15,13 @@ for (var i = 0; i < searchPaths.length; i++) {
     if (fs.existsSync(searchPath)) {
         var lists = fs.readdirSync(searchPath);
         var found = lists.some(function(item) {
-            if (path.extname(item) === '.jar' && item.indexOf('yuicompressor') !== -1) {
+            // Only the shaded jar can be executed: maven-shade-plugin leaves the
+            // pre-shade jar beside it as original-yuicompressor-<version>.jar,
+            // which carries no dependencies and dies with NoClassDefFoundError
+            // on args4j, and maven-jar-plugin can add -sources/-javadoc jars to
+            // the same directory. Matching 'yuicompressor' anywhere in the name
+            // picked whichever the filesystem happened to list first.
+            if (/^yuicompressor-.*\.jar$/.test(item) && !/-(sources|javadoc)\.jar$/.test(item)) {
                 jar = path.join(searchPath, item);
                 return true;
             }

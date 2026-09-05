@@ -217,6 +217,29 @@ and `CssCompressor` (constructors and `compress` overloads) is unchanged.
   first file, so every later file in the same run wrote to a closed stream and was silently
   discarded - `yuicompressor a.css b.css` emitted only `a.css`. Pre-existing, not a regression
 
+### Fixed (Node.js wrapper)
+- **The wrapper no longer runs the un-runnable jar.** It took the first file in `target/` whose
+  name merely *contained* `yuicompressor`, and `maven-shade-plugin` leaves the pre-shade
+  `original-yuicompressor-<version>.jar` right there - 66 KB with no dependencies in it, which
+  dies with `NoClassDefFoundError: org/kohsuke/args4j/CmdLineException`. Which of the two won
+  depended on `readdir` order, so the package worked or returned nothing depending on the
+  filesystem. Only `yuicompressor-<version>.jar` is accepted now, with `-sources` and `-javadoc`
+  excluded. Pre-existing, not a regression
+- `original-*.jar` is no longer published to npm either: `files` shipped both jars, so the
+  broken one travelled with the package
+
+### Changed (Node.js tests)
+- **The Node.js test suite ran zero assertions and reported success.** Four separate reasons, each
+  sufficient on its own: `tests/node/tests.js` resolved its own dependency as `../nodejs/index`
+  from `tests/node/`, i.e. `tests/nodejs/index`, which does not exist, so the file could not even
+  load; had it loaded, it scanned `tests/` for `<name>.<ext>` + `<name>.<ext>.min` fixture pairs
+  and that directory holds none; `yuitest` exits 0 when no tests load; and the CI job that ran it
+  carried `continue-on-error: true`. This is why the jar-selection defect above shipped
+- Replaced it with `tests/node/wrapper.test.js` on the built-in `node:test` runner (no
+  dependency; `yuitest` is dropped), covering what the wrapper actually owns - which jar it
+  selects and whether compression reaches the caller. `npm test` now exits non-zero when a test
+  fails, and CI no longer ignores it
+
 ### Improved
 - Function expressions passed as call arguments, object property values, and array elements now
   get scopes and have their parameters munged, closing a gap in `ScopeBuilder`'s traversal;
