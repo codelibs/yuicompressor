@@ -174,22 +174,6 @@
         </configuration>
       </plugin>
 
-      <!-- GPG plugin for signing artifacts -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-gpg-plugin</artifactId>
-        <version>3.2.7</version>
-        <executions>
-          <execution>
-            <id>sign-artifacts</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>sign</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
       <!-- Central Publishing Plugin -->
       <plugin>
         <groupId>org.sonatype.central</groupId>
@@ -202,4 +186,32 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Signing needs a GPG key and a working pinentry, neither of which a
+         build machine or a developer running `mvn install` necessarily has.
+         Bound outside a profile it failed the build after the tests had
+         already passed, so it is activated only for a release. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
