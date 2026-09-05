@@ -17,8 +17,47 @@ import java.io.Writer;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 public class CssCompressor {
+
+    /**
+     * Functions whose grammar rejects a bare {@code 0} where a
+     * {@code <percentage>} is written, so the "a zero value may drop its unit"
+     * rule must not fire inside them.
+     *
+     * <p>The colour functions take {@code <percentage>} arguments in their
+     * comma-separated legacy form ({@code hsl(27,0%,50%)}), and the math
+     * functions type-check their arguments against each other, so
+     * {@code min(0,10px)} compares a {@code <number>} with a {@code <length>}.
+     * In every one of those cases a browser drops the whole declaration, which
+     * costs the declaration to save one byte.
+     *
+     * <p>Matching is on the whole function name, so {@code minmax()} - where a
+     * zero really may lose its unit - is not caught by the {@code min} entry.
+     */
+    private static final Set<String> PERCENTAGE_REQUIRED_FUNCTIONS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("hsl", "hsla", "rgb", "rgba", "color-mix", "min", "max", "clamp")));
+
+    /**
+     * Properties whose value must not be collapsed from a run of zeroes to a
+     * single {@code 0}.
+     *
+     * <p>{@code margin:0 0 0 0} is the box-model shorthand, where the collapse is
+     * exact. {@code box-shadow} and {@code text-shadow} are not shorthands at all:
+     * a {@code <shadow>} needs both of its offsets, so {@code box-shadow:0} is
+     * invalid and the browser drops the declaration - and with it every other
+     * shadow in the same comma-separated list. {@code perspective-origin:0} means
+     * {@code 0 center}, not {@code 0 0}. {@code flex} was already excluded here
+     * for the same class of reason.
+     *
+     * <p>Names are matched with their vendor prefix removed.
+     */
+    private static final Set<String> ZERO_RUN_NOT_COLLAPSIBLE = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("box-shadow", "text-shadow", "perspective-origin", "flex")));
 
     private StringBuffer srcsb = new StringBuffer();
 
@@ -1100,21 +1139,52 @@ public class CssCompressor {
           css = m.replaceAll("$1to{");
         } while (!(css.equals(oldCss)));
 
-        // Replace 0(px,em,%) with 0 inside groups (e.g. -MOZ-RADIAL-GRADIENT(CENTER 45DEG, CIRCLE CLOSEST-SIDE, ORANGE 0%, RED 100%))
-        p = Pattern.compile("(?i)\\( ?((?:[0-9a-z-.]+[ ,])*)?(?:0?\\.)?0(?:px|em|%|in|cm|mm|pc|pt|ex|deg|g?rad|m?s|k?hz)");
+        // Replace 0(px,em) with 0 inside groups (e.g. -MOZ-RADIAL-GRADIENT(CENTER 45DEG, CIRCLE CLOSEST-SIDE, ORANGE 0PX, RED 100%))
+        p = Pattern.compile("(?i)\\( ?((?:[0-9a-z-.]+[ ,])*)?(?:0?\\.)?0(?:px|em|in|cm|mm|pc|pt|ex|deg|g?rad|m?s|k?hz)");
         do {
           oldCss = css;
           m = p.matcher(css);
           css = m.replaceAll("($10");
         } while (!(css.equals(oldCss)));
 
+        // The same for "%", except inside a function that requires a real
+        // <percentage> there - see PERCENTAGE_REQUIRED_FUNCTIONS. The function
+        // name has to be captured rather than looked behind, so that "min" does
+        // not also match the tail of "minmax".
+        p = Pattern.compile("(?i)([-a-z0-9_]*)\\( ?((?:[0-9a-z-.]+[ ,])*)?(?:0?\\.)?0%");
+        do {
+          oldCss = css;
+          m = p.matcher(css);
+          sb = new StringBuffer();
+          while (m.find()) {
+            String function = m.group(1).toLowerCase();
+            String replacement = PERCENTAGE_REQUIRED_FUNCTIONS.contains(function)
+                    ? m.group(0)
+                    : m.group(1) + "(" + (m.group(2) == null ? "" : m.group(2)) + "0";
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+          }
+          m.appendTail(sb);
+          css = sb.toString();
+        } while (!(css.equals(oldCss)));
+
         // Replace x.0(px,em,%) with x(px,em,%).
         css = css.replaceAll("([0-9])\\.0(px|em|%|in|cm|mm|pc|pt|ex|deg|m?s|g?rad|k?hz| |;)", "$1$2");
 
-        // Replace 0 0 0 0; with 0.
-        css = css.replaceAll(":0 0 0 0(;|})", ":0$1");
-        css = css.replaceAll(":0 0 0(;|})", ":0$1");
-        css = css.replaceAll("(?<!flex):0 0(;|})", ":0$1");
+        // Replace ":0 0 0 0" / ":0 0 0" / ":0 0" with ":0", for the properties where
+        // that is the box-model shorthand rather than a value with a fixed arity -
+        // see ZERO_RUN_NOT_COLLAPSIBLE.
+        p = Pattern.compile("(?i)([-a-z0-9_]+):0(?: 0){1,3}(;|})");
+        m = p.matcher(css);
+        sb = new StringBuffer();
+        while (m.find()) {
+            String property = m.group(1).toLowerCase().replaceFirst("^-(?:webkit|moz|ms|o)-", "");
+            String replacement = ZERO_RUN_NOT_COLLAPSIBLE.contains(property)
+                    ? m.group(0)
+                    : m.group(1) + ":0" + m.group(2);
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        css = sb.toString();
 
 
         // Replace background-position:0; with background-position:0 0;
