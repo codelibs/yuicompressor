@@ -35,62 +35,12 @@ class KnownCssLimitationsTest {
     }
 
     // ------------------------------------------------------------------
-    // A. Zero-percentage stripping produces invalid CSS.
+    // A. Zero-value unit stripping inside a group.
     //
-    // CssCompressor.java (identical on main):
-    //   Pattern.compile("(?i)\\( ?((?:[0-9a-z-.]+[ ,])*)?(?:0?\\.)?0(?:px|em|%|in|cm|mm|pc|pt|ex|deg|g?rad|m?s|k?hz)")
-    //
-    // The rule is "a zero <length> may drop its unit", which is true, and it is
-    // applied to "%" as well - but a <percentage> is a distinct type, not a
-    // length, and several grammars accept ONLY a percentage in the position
-    // this rewrites. The rule fires on anything inside a "(", so it reaches
-    // colour functions and math functions it was never meant for.
+    // The <percentage> half of this family is fixed: CssCompressor now skips
+    // the functions whose grammar requires a real percentage, and
+    // CssColorFunctionTest pins that. What is left is the <time> case below.
     // ------------------------------------------------------------------
-
-    /**
-     * {@code color-mix()} takes {@code <percentage [0,100]>}. A bare {@code 0}
-     * is not a percentage, so the whole declaration is dropped by a browser -
-     * the element loses its colour entirely. The cleanest case of the family:
-     * no legacy/modern grammar ambiguity to argue about.
-     */
-    @Test
-    void colorMixPercentageLosesItsUnit_knownDefect() {
-        assertDoesNotRoundTrip("a{color:color-mix(in srgb, red 0%, blue)}",
-                "a{color:color-mix(in srgb,red 0,blue)}");
-    }
-
-    /**
-     * Legacy comma-separated {@code rgb()} is
-     * {@code rgb(<percentage>#{3})} or {@code rgb(<number>#{3})} - the two may
-     * not be mixed. Stripping one unit produces exactly that mixture.
-     */
-    @Test
-    void rgbPercentageChannelLosesItsUnitAndMixesTypes_knownDefect() {
-        assertDoesNotRoundTrip("a{color:rgb(0%,50%,100%)}", "a{color:rgb(0,50%,100%)}");
-    }
-
-    /**
-     * Legacy comma-separated {@code hsl()}/{@code hsla()} require
-     * {@code <percentage>} for saturation and lightness.
-     */
-    @ParameterizedTest
-    @CsvSource(delimiter = '|', value = {
-            "a{color:hsl(27,0%,50%)}|a{color:hsl(27,0,50%)}",
-            "a{color:hsl(27, 0%, 50%)}|a{color:hsl(27,0,50%)}",
-            "a{color:hsla(27,0%,50%,0.5)}|a{color:hsla(27,0,50%,0.5)}" })
-    void hslSaturationLosesItsUnit_knownDefect(String source, String wrongOutput) throws Exception {
-        assertEquals(wrongOutput, css(source), "if this now keeps the unit, the defect is fixed - delete this row");
-    }
-
-    /**
-     * CSS math functions are type-checked: {@code min()} may not compare a
-     * {@code <number>} with a {@code <length>}. Stripping the "%" turns a legal
-     * comparison into an invalid one.
-     */
-    @Test
-    void aMathFunctionArgumentLosesItsPercentageAndBreaksTypeChecking_knownDefect() {
-        assertDoesNotRoundTrip("a{width:min(0%, 10px)}", "a{width:min(0,10px)}");
-    }
 
     /**
      * The same rule strips {@code <time>} units, but only inside a
