@@ -400,6 +400,16 @@ bought, and it is the safe direction to fail in.
   the whole test suite had already passed on any machine without a GPG key and a working pinentry.
   `docs/BUILDING.md` has always described signing as `mvn clean package -P release`; the POM now
   matches it, and `mvn install` succeeds unsigned
+- **The release build now attaches everything Maven Central requires.** Moving signing into the
+  `release` profile left nothing that activates it: `release:perform` runs its forked deploy build
+  without that profile, and maven-release-plugin 3.x no longer sets `performRelease`, which is what
+  used to pull in the super POM's implicit sources/javadoc profile. The 2.4.11 deployment therefore
+  uploaded only the jar and the POM and was rejected by the Central Portal with "Sources must be
+  provided", "Javadocs must be provided" and a missing signature for each file. `maven-release-plugin`
+  is now pinned and configured with `<releaseProfiles>release</releaseProfiles>`, and the profile
+  declares `maven-source-plugin` and the `attach-javadocs` execution next to the GPG signing, so
+  `mvn deploy -P release` and `mvn release:perform` both produce the signed jar, sources, javadoc
+  and POM
 
 ## [2.4.8]
 
